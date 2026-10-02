@@ -1,0 +1,78 @@
+export type SessionStatus = "attended" | "missed" | "cancelled";
+export type PaymentMethod = "upi" | "cash" | "card" | "bank" | "other";
+
+export type Clinic = {
+  id: string;
+  name: string;
+  phone: string | null;
+  upi_id: string | null;
+  country: string;
+  currency: string;
+  timezone: string;
+};
+
+export type Member = {
+  clinic_id: string;
+  user_id: string;
+  role: "owner" | "physio";
+  display_name: string;
+};
+
+export type PatientSummary = {
+  id: string;
+  clinic_id: string;
+  name: string;
+  phone: string | null;
+  condition: string | null;
+  archived: boolean;
+  rate_per_session: number | null;
+  sessions_bought: number;
+  sessions_attended: number; // dated visits + sessions used before the app
+  sessions_prior: number;
+  sessions_left: number;
+  amount_billed: number;
+  amount_paid: number;
+  amount_due: number;
+  last_visit: string | null;
+};
+
+export type Package = {
+  id: string;
+  patient_id: string;
+  title: string;
+  total_sessions: number;
+  sessions_used_before: number;
+  price: number;
+  start_date: string;
+  created_at: string;
+};
+
+export type Session = {
+  id: string;
+  patient_id: string;
+  package_id: string | null;
+  appointment_id: string | null;
+  session_date: string;
+  status: SessionStatus;
+  notes: string | null;
+  created_at: string;
+};
+
+export type Payment = {
+  id: string;
+  patient_id: string;
+  package_id: string | null;
+  amount: number;
+  method: PaymentMethod;
+  paid_on: string;
+  note: string | null;
+};
+
+export type Appointment = {
+  id: string;
+  patient_id: string;
+  scheduled_date: string;
+  booked_on: string;
+  status: "booked" | "cancelled";
+  note: string | null;
+};

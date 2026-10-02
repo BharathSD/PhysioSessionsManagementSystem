@@ -1,0 +1,65 @@
+"use client";
+
+import { useActionState, useState } from "react";
+import { SubmitButton } from "@/components/submit-button";
+import { signIn, signUp } from "./actions";
+
+export function AuthForms() {
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [signInState, signInAction] = useActionState(signIn, undefined);
+  const [signUpState, signUpAction] = useActionState(signUp, undefined);
+  const state = mode === "signin" ? signInState : signUpState;
+
+  return (
+    <div className="card">
+      <div className="mb-5 grid grid-cols-2 rounded-xl bg-surface-2 p-1 text-sm font-medium">
+        {(["signin", "signup"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMode(m)}
+            className={`rounded-lg py-2 ${mode === m ? "bg-surface shadow-sm" : "text-muted"}`}
+          >
+            {m === "signin" ? "Sign in" : "Create account"}
+          </button>
+        ))}
+      </div>
+
+      <form action={mode === "signin" ? signInAction : signUpAction} className="space-y-4">
+        {mode === "signup" && (
+          <>
+            <label className="field">
+              <span>Your name</span>
+              <input name="full_name" required autoComplete="name" placeholder="Dr. Priya Sharma" />
+            </label>
+            <label className="field">
+              <span>Clinic / practice name <em>(optional)</em></span>
+              <input name="clinic_name" autoComplete="organization" placeholder="Priya's Physio Care" />
+            </label>
+          </>
+        )}
+        <label className="field">
+          <span>Email</span>
+          <input name="email" type="email" required autoComplete="email" inputMode="email" />
+        </label>
+        <label className="field">
+          <span>Password</span>
+          <input
+            name="password"
+            type="password"
+            required
+            minLength={mode === "signup" ? 8 : undefined}
+            autoComplete={mode === "signin" ? "current-password" : "new-password"}
+          />
+        </label>
+
+        {state?.error && <p className="text-sm text-bad">{state.error}</p>}
+        {state?.message && <p className="rounded-lg bg-ok-soft p-3 text-sm text-ok">{state.message}</p>}
+
+        <SubmitButton className="btn btn-primary w-full">
+          {mode === "signin" ? "Sign in" : "Create account"}
+        </SubmitButton>
+      </form>
+    </div>
+  );
+}

@@ -1,36 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Physio Sessions
 
-## Getting Started
+Track physiotherapy session packages, attendance and payments: a simple management app for solo physios, designed to grow into multi-physio clinics.
 
-First, run the development server:
+- **Today screen**: one tap to mark a patient ✓ attended or ✗ missed.
+- **WhatsApp receipts**: after marking, one tap opens WhatsApp with a ready-made message ("✅ Session 7 of 10 done, 3 left, ₹1,500 due"). It uses free click-to-chat links, so there's no WhatsApp API or TRAI/DLT setup.
+- **Balances**: sessions bought vs attended, amount billed vs paid. Only *attended* sessions use up a package. Visits beyond a package (or with no package) are billed at the patient's per-visit rate.
+- **Treatment plans**: fixed days (Mon/Wed/Fri, every 1–4 weeks) or flexible (N sessions every 1–4 weeks). Changing a plan keeps the old one in history. The app also shows the next session and when the package will run out.
+- **Bookings**: one-off sessions with both the session date and the date it was booked.
+- **Moving from paper/Excel**: "Existing patient" mode records the current package (with its real start date), sessions already used (no dates needed), every past payment with its date, and past visits tapped on a calendar.
+- **Date fields**: type a date (`02/10/2026`, `2/10`, `02102026`, `today`), pick it from a calendar, or tap a shortcut.
+- **Phone numbers**: country picker (clinic's country by default), stored in international format.
+- **Installable PWA** for Android, iPhone and desktop from a single codebase.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Stack: Next.js 16 (App Router, server actions), Tailwind CSS 4, Supabase (Postgres, Auth, row-level security).
+
+## Setup
+
+1. **Create a Supabase project** (free tier) at [supabase.com](https://supabase.com). Mumbai (`ap-south-1`) is the closest region to India.
+2. **Create the database**: in the Supabase dashboard, open **SQL Editor** and run each file in [supabase/migrations/](supabase/migrations/) **in order** (`0001_…`, then `0002_…`, …). When a new migration is added later, run just that file.
+3. **Configure auth URLs**: under **Authentication → URL Configuration**, set *Site URL* to `http://localhost:3000` and add `http://localhost:3000/auth/callback` to *Redirect URLs*. When you deploy, add the production URL too.
+   - Optional, for local testing: turn off **Authentication → Sign In / Providers → Email → Confirm email** so new accounts can sign in immediately.
+4. **Environment variables**:
+   ```bash
+   cp .env.example .env.local
+   # fill in values from Project Settings → API (project URL + publishable key)
+   ```
+5. **Run**:
+   ```bash
+   npm install
+   npm run dev
+   ```
+   Open http://localhost:3000 and create an account. Your clinic is created automatically.
+
+To try it on your phone over Wi-Fi, run `npm run dev -- -H 0.0.0.0` and open `http://<your-computer-ip>:3000`. Installing to the home screen needs HTTPS, so do that from a deployed URL (Vercel works out of the box).
+
+## Data model
+
+```
+clinics ──< clinic_members >── auth.users     (a solo physio = clinic of one)
+   │
+   └──< patients ──< packages      (10 sessions for ₹5,000)
+                 ├──< schedules     (treatment plans: valid_from → valid_until)
+                 ├──< appointments  (one-off bookings: scheduled_date, booked_on)
+                 ├──< sessions      (date + attended / missed / cancelled, optional booking)
+                 └──< payments      (amount, method, paid_on)
+
+patient_summary (view): sessions_bought, sessions_attended, sessions_left,
+                        amount_billed, amount_paid, amount_due, last_visit
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Every table carries `clinic_id`, and RLS restricts each user to clinics they belong to. Composite foreign keys stop a session or payment from pointing at another clinic's patient.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Code map
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Path | What |
+|---|---|
+| `src/app/(app)/page.tsx` | Today screen: one-tap attendance + receipts |
+| `src/app/(app)/patients/` | Patient list, add patient, patient detail |
+| `src/app/(app)/settings/` | Physio name, clinic name, UPI ID |
+| `src/app/(app)/actions.ts` | All server actions (writes) |
+| `src/lib/messages.ts` | WhatsApp receipt / summary text |
+| `src/lib/schedule.ts` | Plan maths: who's expected on a day, next visit, projected package end |
+| `src/lib/phone.ts` | Country list, phone parsing to E.164 |
+| `src/lib/format.ts` | Dates (clinic timezone), money, `wa.me` links |
+| `src/components/date-field.tsx` | Type-or-pick date input |
+| `src/components/multi-date-field.tsx` | Tap-to-mark calendar for many past visits |
+| `src/proxy.ts` | Session refresh + redirect to `/login` |
 
-## Learn More
+## Roadmap
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **v1.5**: patient "passbook" link (read-only page per patient) + UPI pay button
+- **Next**: session times in plans and bookings
+- **v2**: patient login (Firebase phone auth / Google), clinics with multiple physios and invites, offline mode, reports
