@@ -1,13 +1,15 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import Link from "next/link";
+import { useState } from "react";
+import { useFormAction } from "@/lib/use-form-action";
 import { SubmitButton } from "@/components/submit-button";
 import { signIn, signUp } from "./actions";
 
 export function AuthForms() {
   const [mode, setMode] = useState<"signin" | "signup">("signin");
-  const [signInState, signInAction] = useActionState(signIn, undefined);
-  const [signUpState, signUpAction] = useActionState(signUp, undefined);
+  const [signInState, signInSubmit, signInPending] = useFormAction(signIn, undefined);
+  const [signUpState, signUpSubmit, signUpPending] = useFormAction(signUp, undefined);
   const state = mode === "signin" ? signInState : signUpState;
 
   return (
@@ -25,7 +27,7 @@ export function AuthForms() {
         ))}
       </div>
 
-      <form action={mode === "signin" ? signInAction : signUpAction} className="space-y-4">
+      <form onSubmit={mode === "signin" ? signInSubmit : signUpSubmit} className="space-y-4">
         {mode === "signup" && (
           <>
             <label className="field">
@@ -52,11 +54,16 @@ export function AuthForms() {
             autoComplete={mode === "signin" ? "current-password" : "new-password"}
           />
         </label>
+        {mode === "signin" && (
+          <Link href="/forgot-password" className="-mt-1 inline-block text-sm font-medium text-brand">
+            Forgot password?
+          </Link>
+        )}
 
         {state?.error && <p className="text-sm text-bad">{state.error}</p>}
         {state?.message && <p className="rounded-lg bg-ok-soft p-3 text-sm text-ok">{state.message}</p>}
 
-        <SubmitButton className="btn btn-primary w-full">
+        <SubmitButton className="btn btn-primary w-full" pending={mode === "signin" ? signInPending : signUpPending}>
           {mode === "signin" ? "Sign in" : "Create account"}
         </SubmitButton>
       </form>

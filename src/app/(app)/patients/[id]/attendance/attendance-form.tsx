@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useState } from "react";
+import { useFormAction } from "@/lib/use-form-action";
 import type { FormState } from "@/app/(app)/actions";
 import { DateField } from "@/components/date-field";
 import { Icon } from "@/components/icons";
@@ -47,13 +48,13 @@ export function AttendanceForm({
   /** What charging would do for absences / patient cancellations, e.g. "Uses 1 package session" or "₹300 fee". */
   chargeHint: { missed: string | null; cancelled_patient: string | null };
 }) {
-  const [state, formAction] = useActionState(action, undefined);
+  const [state, onSubmit, pending] = useFormAction(action, undefined);
   const [outcome, setOutcome] = useState<Outcome>("attended");
   const chargeable = outcome === "missed" || outcome === "cancelled_patient";
   const hint = chargeable ? chargeHint[outcome] : null;
 
   return (
-    <form action={formAction} className="card space-y-5">
+    <form onSubmit={onSubmit} className="card space-y-5">
       <fieldset className="space-y-2">
         <legend className="mb-2 text-base font-medium">What happened?</legend>
         {OUTCOMES.map((o) => (
@@ -121,7 +122,7 @@ export function AttendanceForm({
           {state.error}
         </p>
       )}
-      <SubmitButton className="btn btn-primary min-h-12 w-full text-base" pendingText="Saving…">
+      <SubmitButton className="btn btn-primary min-h-12 w-full text-base" pendingText="Saving…" pending={pending}>
         Save
       </SubmitButton>
     </form>

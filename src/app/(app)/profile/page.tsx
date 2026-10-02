@@ -33,6 +33,11 @@ export default async function ProfilePage() {
         <LinkRow href="/profile/fees" icon="rupee" title="Fees & visit types" detail="In-clinic, home visit, online… and no-show fees" />
       </div>
 
+      <SectionTitle>Security</SectionTitle>
+      <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+        <LinkRow href="/reset-password" icon="edit" title="Change password" detail={email} />
+      </div>
+
       <ActionForm action={updateSettings} submitLabel="Save changes" className="space-y-1">
         <SectionTitle>Your details</SectionTitle>
         <div className="card space-y-4">

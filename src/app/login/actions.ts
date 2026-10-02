@@ -43,3 +43,33 @@ export async function signOut() {
   await supabase.auth.signOut();
   redirect("/login");
 }
+
+/** Sends a password-reset link. Says the same thing whether or not the email has an account. */
+export async function requestPasswordReset(_prev: AuthState, form: FormData): Promise<AuthState> {
+  const email = String(form.get("email") ?? "").trim();
+  if (!email) return { error: "Enter the email you signed up with." };
+
+  const origin = (await headers()).get("origin") ?? "";
+  const supabase = await createClient();
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${origin}/auth/callback?next=/reset-password`,
+  });
+  if (error && /rate limit|too many/i.test(error.message)) {
+    return { error: "Too many emails sent recently. Please wait a few minutes and try again." };
+  }
+  return { message: `If ${email} has an account, a reset link is on its way. Open it on this device.` };
+}
+
+/** Sets a new password for the signed-in user (after a reset link, or from Profile). */
+export async function updatePassword(_prev: AuthState, form: FormData): Promise<AuthState> {
+  const password = String(form.get("password") ?? "");
+  if (password.length < 8) return { error: "Password must be at least 8 characters." };
+  if (password !== String(form.get("confirm") ?? "")) return { error: "The two passwords don't match." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) {
+    return { error: /different from the old/i.test(error.message) ? "Choose a password different from your current one." : error.message };
+  }
+  redirect(`/?${new URLSearchParams({ done: "Password updated" })}`);
+}

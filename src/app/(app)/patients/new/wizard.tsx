@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { DateField } from "@/components/date-field";
 import { FeeInputs } from "@/components/fee-inputs";
 import { Icon } from "@/components/icons";
@@ -12,6 +12,7 @@ import { PlanFields } from "@/components/plan-fields";
 import { SubmitButton } from "@/components/submit-button";
 import { VisitTypePicker } from "@/components/visit-type-picker";
 import type { VisitType } from "@/lib/types";
+import { useFormAction } from "@/lib/use-form-action";
 import { createPatient } from "../../actions";
 
 type Step = { title: string; hint: string; body: React.ReactNode };
@@ -35,7 +36,7 @@ export function AddPatientWizard({
   defaultFees: Record<string, number | null>;
   currency: string;
 }) {
-  const [state, action] = useActionState(createPatient, undefined);
+  const [state, onSubmit, pending] = useFormAction(createPatient, undefined);
   const [step, setStep] = useState(0);
   const [usualType, setUsualType] = useState(types[0]?.id ?? "");
   const stepRefs = useRef<(HTMLDivElement | null)[]>([]);
@@ -149,7 +150,7 @@ export function AddPatientWizard({
 
   return (
     <form
-      action={action}
+      onSubmit={onSubmit}
       onKeyDown={(e) => {
         // Enter moves to the next step instead of saving half-way through.
         if (e.key === "Enter" && !last && !e.defaultPrevented && (e.target as HTMLElement).tagName === "INPUT") {
@@ -201,7 +202,7 @@ export function AddPatientWizard({
           </button>
         )}
         {last ? (
-          <SubmitButton className="btn btn-primary min-h-12 flex-[2] text-base" pendingText="Saving…">
+          <SubmitButton className="btn btn-primary min-h-12 flex-[2] text-base" pendingText="Saving…" pending={pending}>
             <Icon name="check" /> Save patient
           </SubmitButton>
         ) : (

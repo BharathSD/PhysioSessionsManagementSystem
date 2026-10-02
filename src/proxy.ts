@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/auth"];
+const PUBLIC_PATHS = ["/login", "/auth", "/forgot-password"];
 
 // Refreshes the Supabase session cookie on every navigation and sends
 // signed-out visitors to /login. Real authorization is enforced by RLS.

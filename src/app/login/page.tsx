@@ -14,6 +14,11 @@ export default async function LoginPage(props: PageProps<"/login">) {
         <h1 className="text-2xl font-semibold">Physio Sessions</h1>
         <p className="mt-1 text-sm text-muted">Track sessions, attendance and payments in one place.</p>
       </div>
+      {error === "reset" && (
+        <p className="mb-4 rounded-lg bg-bad-soft p-3 text-sm text-bad">
+          That reset link has expired or was already used. Ask for a new one with “Forgot password?” below — and open it on this device.
+        </p>
+      )}
       {error === "confirm" && (
         <p className="mb-4 rounded-lg bg-bad-soft p-3 text-sm text-bad">
           That confirmation link didn&apos;t work. Open it in the same browser you signed up with, or sign in below.

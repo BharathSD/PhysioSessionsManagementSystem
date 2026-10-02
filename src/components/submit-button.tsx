@@ -7,9 +7,12 @@ export function SubmitButton({
   children,
   className = "btn",
   pendingText,
+  pending: pendingProp,
   ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { pendingText?: string }) {
-  const { pending } = useFormStatus();
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { pendingText?: string; pending?: boolean }) {
+  // `pending` is passed by forms that submit via useFormAction (useFormStatus can't see those).
+  const status = useFormStatus();
+  const pending = pendingProp ?? status.pending;
   return (
     <button type="submit" disabled={pending} aria-busy={pending} className={className} {...props}>
       {pending && pendingText ? pendingText : children}

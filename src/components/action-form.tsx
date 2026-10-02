@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
+import { useFormAction } from "@/lib/use-form-action";
 import type { FormState } from "@/app/(app)/actions";
 import { SubmitButton } from "./submit-button";
 
@@ -18,7 +19,7 @@ export function ActionForm({
   className?: string;
   children: React.ReactNode;
 }) {
-  const [state, formAction] = useActionState(action, undefined);
+  const [state, onSubmit, pending] = useFormAction(action, undefined);
   const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
@@ -26,7 +27,7 @@ export function ActionForm({
   }, [state, resetOnSuccess]);
 
   return (
-    <form ref={formRef} action={formAction} className={className}>
+    <form ref={formRef} onSubmit={onSubmit} className={className}>
       {children}
       {state?.error && (
         <p role="alert" className="rounded-2xl bg-bad-soft p-3 text-base text-bad">
@@ -38,7 +39,7 @@ export function ActionForm({
           ✓ {state.ok}
         </p>
       )}
-      <SubmitButton className="btn btn-primary min-h-12 w-full text-base" pendingText="Saving…">
+      <SubmitButton className="btn btn-primary min-h-12 w-full text-base" pendingText="Saving…" pending={pending}>
         {submitLabel}
       </SubmitButton>
     </form>
