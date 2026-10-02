@@ -1,6 +1,8 @@
 import { ActionForm } from "@/components/action-form";
 import { DateField } from "@/components/date-field";
 import { PageHeader } from "@/components/ui";
+import { VisitTypePicker } from "@/components/visit-type-picker";
+import { getBilling } from "@/lib/billing";
 import { getContext } from "@/lib/context";
 import { todayIn } from "@/lib/format";
 import { loadPatient } from "@/lib/patient";
@@ -13,11 +15,12 @@ export default async function NewPackagePage(props: PageProps<"/patients/[id]/pa
   const ctx = await getContext();
   const p = await loadPatient(ctx, id);
   const today = todayIn(ctx.clinic.timezone);
+  const { activeTypes } = await getBilling();
 
   return (
     <div>
       <PageHeader
-        back={{ href: `/patients/${p.id}?tab=payments`, label: p.name }}
+        back={{ href: `/patients/${p.id}?tab=account`, label: p.name }}
         title="New package"
         subtitle="A block of sessions the patient pays for, e.g. 10 sessions for ₹5,000."
       />
@@ -32,6 +35,7 @@ export default async function NewPackagePage(props: PageProps<"/patients/[id]/pa
             <input name="price" inputMode="decimal" placeholder="e.g. 5000" />
           </label>
         </div>
+        <VisitTypePicker types={activeTypes} label="Sessions for" anyLabel="Any visit type" />
         <label className="field">
           <span>Name <em>(optional)</em></span>
           <input name="title" placeholder="e.g. Knee rehab – phase 2" />

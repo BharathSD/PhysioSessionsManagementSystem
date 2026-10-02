@@ -1,6 +1,7 @@
 import { ActionForm } from "@/components/action-form";
 import { PlanFields } from "@/components/plan-fields";
 import { PageHeader } from "@/components/ui";
+import { getBilling } from "@/lib/billing";
 import { getContext } from "@/lib/context";
 import { formatDate, todayIn } from "@/lib/format";
 import { loadPatient } from "@/lib/patient";
@@ -16,6 +17,7 @@ export default async function SchedulePage(props: PageProps<"/patients/[id]/sche
   const today = todayIn(ctx.clinic.timezone);
   const { data } = await ctx.supabase.from("schedules").select("*").eq("patient_id", p.id);
   const current = planOn((data ?? []) as Plan[], today);
+  const { activeTypes } = await getBilling();
 
   return (
     <div>
@@ -33,7 +35,7 @@ export default async function SchedulePage(props: PageProps<"/patients/[id]/sche
         </div>
       )}
       <ActionForm action={changePlan.bind(null, p.id)} submitLabel="Save schedule" className="card space-y-5">
-        <PlanFields today={today} />
+        <PlanFields today={today} types={activeTypes} defaultType={current?.visit_type_id ?? p.default_visit_type_id} />
       </ActionForm>
     </div>
   );

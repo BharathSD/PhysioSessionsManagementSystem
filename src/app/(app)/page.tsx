@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Icon } from "@/components/icons";
 import { LinkRow, SectionTitle } from "@/components/ui";
+import { getBilling } from "@/lib/billing";
 import { getBoard } from "@/lib/board";
 import { getContext } from "@/lib/context";
 import { formatDate, formatMoney, todayIn } from "@/lib/format";
@@ -21,7 +22,8 @@ export default async function HomePage() {
   const monthStart = `${today.slice(0, 7)}-01`;
   const weekEnd = addDays(today, 7);
 
-  const [board, yesterdayBoard, { count: monthSessions }, { data: monthPayments }, { data: plans }, { data: bookings }] = await Promise.all([
+  const [{ rates }, board, yesterdayBoard, { count: monthSessions }, { data: monthPayments }, { data: plans }, { data: bookings }] = await Promise.all([
+    getBilling(),
     getBoard(ctx, today),
     getBoard(ctx, yesterday),
     supabase.from("sessions").select("id", { count: "exact", head: true }).eq("status", "attended").gte("session_date", monthStart),
@@ -33,7 +35,8 @@ export default async function HomePage() {
   const patients = board.all.map((r) => r.p);
   const owing = patients.filter((p) => p.amount_due > 0).sort((a, b) => b.amount_due - a.amount_due);
   const totalDue = owing.reduce((sum, p) => sum + p.amount_due, 0);
-  const ending = patients.filter((p) => p.sessions_bought > 0 && p.sessions_left <= 1 && !(p.sessions_left < 0 && p.rate_per_session !== null));
+  const ending = patients.filter((p) => p.sessions_bought > 0 && p.sessions_left <= 1);
+  const noFees = !rates.some((r) => r.patient_id === null && r.kind === "visit" && r.amount !== null);
   const unmarked = yesterdayBoard.expected.filter((r) => !r.session && r.expected?.kind !== "flexible");
   const collected = (monthPayments ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
   const money = (n: number) => formatMoney(n, clinic.currency);
@@ -93,7 +96,7 @@ export default async function HomePage() {
 
       {/* Needs attention */}
       <SectionTitle>Needs attention</SectionTitle>
-      {owing.length + ending.length + unmarked.length === 0 ? (
+      {owing.length + ending.length + unmarked.length + Number(noFees) === 0 ? (
         <div className="card flex items-center gap-3">
           <span className="flex size-10 items-center justify-center rounded-xl bg-ok-soft text-ok">
             <Icon name="check" />
@@ -102,6 +105,15 @@ export default async function HomePage() {
         </div>
       ) : (
         <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
+          {noFees && (
+            <LinkRow
+              href="/profile/fees"
+              icon="rupee"
+              tone="warn"
+              title="Set your fees"
+              detail="In-clinic, home visit and online fees — used when you mark attendance"
+            />
+          )}
           {unmarked.slice(0, 5).map((r) => (
             <LinkRow
               key={r.p.id}

@@ -18,7 +18,7 @@ export default async function RecordPaymentPage(props: PageProps<"/patients/[id]
   return (
     <div>
       <PageHeader
-        back={{ href: `/patients/${p.id}?tab=payments`, label: p.name }}
+        back={{ href: `/patients/${p.id}?tab=account`, label: p.name }}
         title="Record payment"
         subtitle={p.amount_due > 0 ? `${formatMoney(p.amount_due, ctx.clinic.currency)} is due` : "Nothing is due right now"}
       />

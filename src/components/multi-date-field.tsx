@@ -17,7 +17,7 @@ const WEEK_HEADER = ["M", "T", "W", "T", "F", "S", "S"];
  * have a visit are shown and can't be picked again.
  * Submits `attended_dates` and `missed_dates` (ISO, repeated).
  */
-export function MultiDateField({ today, existing = {} }: { today: string; existing?: Record<string, Mark | "cancelled"> }) {
+export function MultiDateField({ today, existing = {} }: { today: string; existing?: Record<string, string> }) {
   const [marks, setMarks] = useState<Record<string, Mark>>({});
   const [month, setMonth] = useState(today.slice(0, 7));
   const [typed, setTyped] = useState("");

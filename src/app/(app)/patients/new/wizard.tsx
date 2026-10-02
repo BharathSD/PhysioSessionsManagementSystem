@@ -9,6 +9,8 @@ import { PaymentRows } from "@/components/payment-rows";
 import { PhoneField } from "@/components/phone-field";
 import { PlanFields } from "@/components/plan-fields";
 import { SubmitButton } from "@/components/submit-button";
+import { VisitTypePicker } from "@/components/visit-type-picker";
+import type { VisitType } from "@/lib/types";
 import { createPatient } from "../../actions";
 
 type Step = { title: string; hint: string; body: React.ReactNode };
@@ -17,9 +19,20 @@ type Step = { title: string; hint: string; body: React.ReactNode };
  * Add-patient flow, one short step per screen. All steps live in one form
  * (hidden ones still submit), so nothing is saved until the final step.
  */
-export function AddPatientWizard({ existing, today, clinicCountry }: { existing: boolean; today: string; clinicCountry: string }) {
+export function AddPatientWizard({
+  existing,
+  today,
+  clinicCountry,
+  types,
+}: {
+  existing: boolean;
+  today: string;
+  clinicCountry: string;
+  types: VisitType[];
+}) {
   const [state, action] = useActionState(createPatient, undefined);
   const [step, setStep] = useState(0);
+  const [usualType, setUsualType] = useState(types[0]?.id ?? "");
   const stepRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const details: Step = {
@@ -36,6 +49,9 @@ export function AddPatientWizard({ existing, today, clinicCountry }: { existing:
           <span>Condition <em>(optional)</em></span>
           <input name="condition" placeholder="e.g. Knee rehab, frozen shoulder" />
         </label>
+        <div onChange={(e) => setUsualType((e.target as HTMLInputElement).value)}>
+          <VisitTypePicker types={types} label="Usually seen as" defaultValue={usualType} />
+        </div>
       </>
     ),
   };
@@ -68,11 +84,12 @@ export function AddPatientWizard({ existing, today, clinicCountry }: { existing:
             </label>
           </>
         )}
+        <VisitTypePicker types={types} name="package_visit_type" label="Package sessions are for" anyLabel="Any visit type" />
         <label className="field">
           <span>
-            Fee per visit <em>(optional — for visits without a package)</em>
+            Special fee per visit for this patient <em>(optional — leave empty to use your standard fee)</em>
           </span>
-          <input name="rate_per_session" inputMode="decimal" placeholder="e.g. 600" />
+          <input name="custom_fee" inputMode="decimal" placeholder="e.g. 500" />
         </label>
         {!existing && (
           <div className="space-y-3 rounded-2xl bg-surface-2 p-3">
@@ -104,7 +121,7 @@ export function AddPatientWizard({ existing, today, clinicCountry }: { existing:
   const scheduleStep: Step = {
     title: "Schedule",
     hint: "Which days they come. You can change this any time as they progress.",
-    body: <PlanFields today={today} allowNone />,
+    body: <PlanFields key={usualType} today={today} types={types} defaultType={usualType} allowNone />,
   };
 
   const steps = existing ? [details, packageStep, paymentsStep, visitsStep, scheduleStep] : [details, packageStep, scheduleStep];

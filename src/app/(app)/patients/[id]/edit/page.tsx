@@ -3,6 +3,8 @@ import { ConfirmButton } from "@/components/confirm-button";
 import { Icon } from "@/components/icons";
 import { PhoneField } from "@/components/phone-field";
 import { PageHeader, SectionTitle } from "@/components/ui";
+import { VisitTypePicker } from "@/components/visit-type-picker";
+import { getBilling } from "@/lib/billing";
 import { getContext } from "@/lib/context";
 import { loadPatient } from "@/lib/patient";
 import { setArchived, updatePatient } from "../../../actions";
@@ -13,6 +15,7 @@ export default async function EditPatientPage(props: PageProps<"/patients/[id]/e
   const { id } = await props.params;
   const ctx = await getContext();
   const p = await loadPatient(ctx, id);
+  const { activeTypes } = await getBilling();
 
   return (
     <div>
@@ -27,12 +30,8 @@ export default async function EditPatientPage(props: PageProps<"/patients/[id]/e
           <span>Condition</span>
           <input name="condition" defaultValue={p.condition ?? ""} placeholder="e.g. Knee rehab" />
         </label>
-        <label className="field">
-          <span>
-            Fee per visit <em>(for visits without a package)</em>
-          </span>
-          <input name="rate_per_session" inputMode="decimal" defaultValue={p.rate_per_session ?? ""} placeholder="e.g. 600" />
-        </label>
+        <VisitTypePicker types={activeTypes} label="Usually seen as" defaultValue={p.default_visit_type_id} />
+        <p className="text-sm text-muted">Fees for this patient are under Account → Fees for this patient.</p>
       </ActionForm>
 
       <SectionTitle>{p.archived ? "Restore" : "Treatment finished?"}</SectionTitle>

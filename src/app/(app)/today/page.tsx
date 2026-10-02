@@ -3,30 +3,33 @@ import { BalanceChips } from "@/components/balance";
 import { Icon } from "@/components/icons";
 import { SubmitButton } from "@/components/submit-button";
 import { EmptyState, PageHeader, SectionTitle } from "@/components/ui";
+import { VisitCost } from "@/components/visit-cost";
+import { getBilling } from "@/lib/billing";
 import { getBoard, type BoardRow } from "@/lib/board";
 import { getContext } from "@/lib/context";
 import { firstParam } from "@/lib/data";
+import { canChargeMiss } from "@/lib/fees";
 import { formatDate, todayIn, whatsappLink } from "@/lib/format";
 import { sessionReceipt } from "@/lib/messages";
-import type { Clinic } from "@/lib/types";
+import { STATUS } from "@/lib/status";
+import type { Clinic, Rate } from "@/lib/types";
 import { deleteSession, markToday } from "../actions";
 
 export const metadata = { title: "Today" };
 
-const STATUS = {
-  attended: { label: "Present", icon: "check", className: "bg-ok-soft text-ok" },
-  missed: { label: "Absent", icon: "x", className: "bg-bad-soft text-bad" },
-  cancelled: { label: "Cancelled", icon: "x", className: "bg-surface-2 text-muted" },
-} as const;
-
-type Sender = { clinic: Clinic; physioName: string };
+type RowContext = {
+  sender: { clinic: Clinic; physioName: string };
+  rates: Rate[];
+  typeName: (id: string | null | undefined) => string;
+  today: string;
+};
 
 export default async function TodayPage(props: PageProps<"/today">) {
   const q = firstParam((await props.searchParams).q);
   const ctx = await getContext();
   const today = todayIn(ctx.clinic.timezone);
-  const { expected, others, seen } = await getBoard(ctx, today, q);
-  const sender = { clinic: ctx.clinic, physioName: ctx.member.display_name };
+  const [{ expected, others, seen }, { rates, typeName }] = await Promise.all([getBoard(ctx, today, q), getBilling()]);
+  const rc: RowContext = { sender: { clinic: ctx.clinic, physioName: ctx.member.display_name }, rates, typeName, today };
   const done = expected.filter((r) => r.session).length;
 
   return (
@@ -62,13 +65,11 @@ export default async function TodayPage(props: PageProps<"/today">) {
         <>
           <SectionTitle aside={expected.length > 0 ? `${done} of ${expected.length} marked` : undefined}>Expected today</SectionTitle>
           {expected.length === 0 ? (
-            <p className="card text-base text-muted">
-              No one is scheduled today. Patients with a schedule or a booking will appear here.
-            </p>
+            <p className="card text-base text-muted">No one is scheduled today. Patients with a schedule or a booking will appear here.</p>
           ) : (
             <ul className="space-y-2.5">
               {expected.map((r) => (
-                <PatientRow key={r.p.id} row={r} sender={sender} />
+                <PatientRow key={r.p.id} row={r} rc={rc} />
               ))}
             </ul>
           )}
@@ -82,7 +83,7 @@ export default async function TodayPage(props: PageProps<"/today">) {
               </summary>
               <ul className="space-y-2.5">
                 {others.map((r) => (
-                  <PatientRow key={r.p.id} row={r} sender={sender} />
+                  <PatientRow key={r.p.id} row={r} rc={rc} />
                 ))}
               </ul>
             </details>
@@ -93,9 +94,10 @@ export default async function TodayPage(props: PageProps<"/today">) {
   );
 }
 
-function PatientRow({ row, sender }: { row: BoardRow; sender: Sender }) {
-  const { p, session, expected, next } = row;
+function PatientRow({ row, rc }: { row: BoardRow; rc: RowContext }) {
+  const { p, session, expected, next, visitTypeId } = row;
   const status = session ? STATUS[session.status] : null;
+  const sessionType = session?.visit_type_id ?? visitTypeId;
 
   return (
     <li className="card">
@@ -104,55 +106,82 @@ function PatientRow({ row, sender }: { row: BoardRow; sender: Sender }) {
           <div className="min-w-0">
             <p className="truncate text-lg font-semibold">{p.name}</p>
             <p className="text-sm text-muted">
-              {p.sessions_bought > 0 ? `Session ${p.sessions_attended + (session ? 0 : 1)} of ${p.sessions_bought}` : "Pay per visit"}
-              {expected && ` · ${expected.label}`}
+              {/* Once marked, the visit type is shown with its cost below. */}
+              {[session ? null : rc.typeName(sessionType), expected?.label].filter(Boolean).join(" · ")}
             </p>
           </div>
           {status && (
             <span className={`chip shrink-0 gap-1 py-1 text-sm ${status.className}`}>
               <Icon name={status.icon} className="size-4" />
-              {status.label}
+              {status.short}
             </span>
           )}
         </div>
-        <div className="mt-2">
-          <BalanceChips p={p} currency={sender.clinic.currency} />
-        </div>
+        {!session && (
+          <div className="mt-2">
+            <BalanceChips p={p} currency={rc.sender.clinic.currency} />
+          </div>
+        )}
       </Link>
 
       {!session ? (
-        <div className="mt-3 grid grid-cols-[1fr_2fr] gap-2">
-          <form action={markToday.bind(null, p.id, "missed")}>
-            <SubmitButton className="btn btn-bad w-full text-base" aria-label={`Mark ${p.name} absent`}>
-              <Icon name="x" /> Absent
-            </SubmitButton>
-          </form>
-          <form action={markToday.bind(null, p.id, "attended")}>
-            <SubmitButton className="btn btn-ok w-full text-base" aria-label={`Mark ${p.name} present`}>
-              <Icon name="check" /> Present
-            </SubmitButton>
-          </form>
-        </div>
+        <>
+          <div className="mt-3 grid grid-cols-[1fr_2fr] gap-2">
+            <form action={markToday.bind(null, p.id, "missed", visitTypeId)}>
+              <SubmitButton className="btn btn-bad w-full text-base" aria-label={`Mark ${p.name} absent`}>
+                <Icon name="x" /> Absent
+              </SubmitButton>
+            </form>
+            <form action={markToday.bind(null, p.id, "attended", visitTypeId)}>
+              <SubmitButton className="btn btn-ok w-full text-base" aria-label={`Mark ${p.name} present`}>
+                <Icon name="check" /> Present
+              </SubmitButton>
+            </form>
+          </div>
+          <Link
+            href={`/patients/${p.id}/attendance`}
+            className="mt-2 flex min-h-10 items-center justify-center gap-1 text-sm font-medium text-brand"
+          >
+            Cancelled, rescheduled or different visit type?
+            <Icon name="chevron" className="size-4" />
+          </Link>
+        </>
       ) : (
-        <div className="mt-3 flex gap-2">
-          {p.phone ? (
-            <a
-              href={whatsappLink(p.phone, sessionReceipt(p, session, sender, next))}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn btn-whatsapp flex-1 text-base"
-            >
-              <Icon name="message" /> Send receipt
-            </a>
-          ) : (
-            <Link href={`/patients/${p.id}/edit`} className="btn flex-1 text-muted">
-              Add phone number to send receipt
-            </Link>
-          )}
-          <form action={deleteSession.bind(null, session.id)}>
-            <SubmitButton className="btn text-base text-muted">Undo</SubmitButton>
-          </form>
-        </div>
+        <>
+          <div className="mt-2">
+            <VisitCost
+              session={session}
+              typeName={rc.typeName(session.visit_type_id)}
+              currency={rc.sender.clinic.currency}
+              canCharge={canChargeMiss(rc.rates, {
+                patientId: p.id,
+                sessionsLeft: p.sessions_left,
+                status: session.status,
+                visitTypeId: session.visit_type_id,
+                date: rc.today,
+              })}
+            />
+          </div>
+          <div className="mt-3 flex gap-2">
+            {p.phone ? (
+              <a
+                href={whatsappLink(p.phone, sessionReceipt(p, session, rc.sender, next, rc.typeName(session.visit_type_id)))}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-whatsapp flex-1 text-base"
+              >
+                <Icon name="message" /> Send receipt
+              </a>
+            ) : (
+              <Link href={`/patients/${p.id}/edit`} className="btn flex-1 text-muted">
+                Add phone number to send receipt
+              </Link>
+            )}
+            <form action={deleteSession.bind(null, session.id)}>
+              <SubmitButton className="btn text-base text-muted">Undo</SubmitButton>
+            </form>
+          </div>
+        </>
       )}
     </li>
   );

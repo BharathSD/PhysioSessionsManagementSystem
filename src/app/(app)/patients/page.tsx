@@ -20,7 +20,7 @@ type FilterKey = (typeof FILTERS)[number]["key"];
 const MATCH: Record<FilterKey, (p: PatientSummary) => boolean> = {
   all: () => true,
   due: (p) => p.amount_due > 0,
-  ending: (p) => p.sessions_bought > 0 && p.sessions_left <= 1 && !(p.sessions_left < 0 && p.rate_per_session !== null),
+  ending: (p) => p.sessions_bought > 0 && p.sessions_left <= 1,
   archived: () => true,
 };
 

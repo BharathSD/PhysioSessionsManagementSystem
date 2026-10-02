@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Icon } from "@/components/icons";
 import { PageHeader } from "@/components/ui";
+import { getBilling } from "@/lib/billing";
 import { getContext } from "@/lib/context";
 import { firstParam } from "@/lib/data";
 import { todayIn } from "@/lib/format";
@@ -10,7 +11,7 @@ export const metadata = { title: "Add patient" };
 
 export default async function NewPatientPage(props: PageProps<"/patients/new">) {
   const type = firstParam((await props.searchParams).type);
-  const { clinic } = await getContext();
+  const [{ clinic }, { activeTypes }] = await Promise.all([getContext(), getBilling()]);
 
   if (type !== "new" && type !== "existing") {
     return (
@@ -40,7 +41,7 @@ export default async function NewPatientPage(props: PageProps<"/patients/new">) 
         back={{ href: "/patients/new", label: "Back" }}
         title={type === "existing" ? "Add existing patient" : "Add new patient"}
       />
-      <AddPatientWizard key={type} existing={type === "existing"} today={todayIn(clinic.timezone)} clinicCountry={clinic.country} />
+      <AddPatientWizard key={type} existing={type === "existing"} today={todayIn(clinic.timezone)} clinicCountry={clinic.country} types={activeTypes} />
     </div>
   );
 }

@@ -17,19 +17,16 @@ export function BalanceChips({ p, currency }: { p: PatientSummary; currency: str
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {p.sessions_bought === 0 ? (
-        <span className="chip bg-surface-2 text-muted">{p.rate_per_session !== null ? "Pay per visit" : "No package"}</span>
-      ) : p.sessions_left < 0 && p.rate_per_session !== null ? (
-        <span className="chip bg-surface-2 text-muted">+{-p.sessions_left} per-visit</span>
+        <span className="chip bg-surface-2 text-muted">Pay per visit</span>
       ) : p.sessions_left > 1 ? (
-        <span className="chip bg-brand-soft text-brand">{p.sessions_left} left</span>
+        <span className="chip bg-brand-soft text-brand">{p.sessions_left} sessions left</span>
       ) : p.sessions_left === 1 ? (
         <span className="chip bg-warn-soft text-warn">Last session</span>
-      ) : p.sessions_left === 0 ? (
-        <span className="chip bg-warn-soft text-warn">Package used up</span>
       ) : (
-        <span className="chip bg-bad-soft text-bad">{-p.sessions_left} unpaid session{p.sessions_left === -1 ? "" : "s"}</span>
+        <span className="chip bg-warn-soft text-warn">Package used up</span>
       )}
       {p.amount_due > 0 && <span className="chip bg-bad-soft text-bad">{formatMoney(p.amount_due, currency)} due</span>}
+      {p.amount_due < 0 && <span className="chip bg-ok-soft text-ok">{formatMoney(-p.amount_due, currency)} advance</span>}
     </div>
   );
 }

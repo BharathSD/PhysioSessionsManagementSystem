@@ -2,23 +2,17 @@
 // timestamped on the patient's phone, which is what makes it a verifiable record.
 
 import { formatDate, formatDay, formatMoney } from "./format";
-import type { Clinic, PatientSummary, Payment, Session, SessionStatus } from "./types";
+import type { Clinic, PatientSummary, Payment, Session } from "./types";
 
 type Sender = { clinic: Clinic; physioName: string };
 
 function balanceLine(p: PatientSummary, currency: string): string {
   const parts: string[] = [];
-  const perVisit = p.rate_per_session !== null;
-  if (p.sessions_bought === 0 || (p.sessions_left < 0 && perVisit)) {
-    // Visits are billed per visit; the amount due says it all.
-  } else if (p.sessions_left > 0) {
-    parts.push(`${p.sessions_left} session${p.sessions_left === 1 ? "" : "s"} left`);
-  } else if (p.sessions_left === 0) {
-    parts.push("Package complete");
-  } else {
-    parts.push(`${-p.sessions_left} session${p.sessions_left === -1 ? "" : "s"} not yet paid for`);
+  if (p.sessions_bought > 0) {
+    parts.push(p.sessions_left > 0 ? `${p.sessions_left} package session${p.sessions_left === 1 ? "" : "s"} left` : "Package complete");
   }
   if (p.amount_due > 0) parts.push(`${formatMoney(p.amount_due, currency)} due`);
+  if (p.amount_due < 0) parts.push(`${formatMoney(-p.amount_due, currency)} paid in advance`);
   return parts.join(" · ") || "All paid up ✓";
 }
 
@@ -28,27 +22,32 @@ function footer({ clinic, physioName }: Sender, p: PatientSummary): string {
   return lines.join("\n");
 }
 
-const STATUS_HEADLINE: Record<SessionStatus, string> = {
-  attended: "✅ Session",
-  missed: "❌ Missed session",
-  cancelled: "↩️ Cancelled session",
-};
+/** "Home visit · ₹1,000" / "In-clinic session · from package (7 of 10)" */
+function costLine(p: PatientSummary, s: Pick<Session, "package_id" | "charge">, currency: string): string {
+  if (s.package_id) return `from package (${p.sessions_used} of ${p.sessions_bought} used)`;
+  return Number(s.charge) > 0 ? formatMoney(s.charge, currency) : "";
+}
 
 export function sessionReceipt(
   p: PatientSummary,
-  session: Pick<Session, "status" | "session_date">,
+  session: Pick<Session, "status" | "session_date" | "package_id" | "charge">,
   sender: Sender,
-  nextVisit?: string | null,
+  nextVisit: string | null,
+  visitTypeName: string,
 ): string {
   const date = formatDate(session.session_date);
-  const headline =
-    session.status === "attended"
-      ? `${STATUS_HEADLINE.attended} ${p.sessions_attended}${p.sessions_bought ? ` of ${p.sessions_bought}` : ""} done – ${date}`
-      : `${STATUS_HEADLINE[session.status]} – ${date} (not counted)`;
+  const cost = costLine(p, session, sender.clinic.currency);
+  const headline = {
+    attended: `✅ ${visitTypeName} done – ${date}`,
+    missed: `❌ Missed ${visitTypeName.toLowerCase()} – ${date}`,
+    cancelled_patient: `↩️ ${visitTypeName} on ${date} cancelled`,
+    cancelled_clinic: `↩️ ${visitTypeName} on ${date} cancelled by us — sorry for the inconvenience`,
+  }[session.status];
 
   return [
     `Hi ${p.name},`,
     headline,
+    ...(cost ? [session.status === "attended" ? `Charge: ${cost}` : `Cancellation charge: ${cost}`] : []),
     balanceLine(p, sender.clinic.currency),
     ...(nextVisit ? [`📅 Next session: ${formatDay(nextVisit)}`] : []),
     "",
@@ -68,18 +67,21 @@ export function paymentReceipt(p: PatientSummary, payment: Pick<Payment, "amount
   ].join("\n");
 }
 
-export function statement(p: PatientSummary, sessions: Session[], sender: Sender): string {
+export function statement(p: PatientSummary, sessions: Session[], sender: Sender, typeName: (id: string | null) => string): string {
   const currency = sender.clinic.currency;
-  const recent = sessions
-    .slice(0, 15)
-    .map((s) => `${s.status === "attended" ? "✅" : s.status === "missed" ? "❌" : "↩️"} ${formatDate(s.session_date)}`);
+  const icon = { attended: "✅", missed: "❌", cancelled_patient: "↩️", cancelled_clinic: "↩️" };
+  const recent = sessions.slice(0, 15).map((s) => {
+    const cost = Number(s.charge) > 0 ? ` · ${formatMoney(s.charge, currency)}` : s.package_id ? " · package" : "";
+    return `${icon[s.status]} ${formatDate(s.session_date)} · ${typeName(s.visit_type_id)}${cost}`;
+  });
 
   return [
-    `Hi ${p.name}, here is your session summary:`,
+    `Hi ${p.name}, here is your summary:`,
     "",
-    p.sessions_bought > 0 ? `Sessions: ${p.sessions_attended} attended of ${p.sessions_bought} paid` : `Visits so far: ${p.sessions_attended}`,
+    `Visits: ${p.visits}`,
+    ...(p.sessions_bought > 0 ? [`Package: ${p.sessions_used} of ${p.sessions_bought} sessions used`] : []),
+    `Billed: ${formatMoney(p.amount_billed, currency)} · Paid: ${formatMoney(p.amount_paid, currency)}`,
     balanceLine(p, currency),
-    `Paid: ${formatMoney(p.amount_paid, currency)} of ${formatMoney(p.amount_billed, currency)}`,
     ...(recent.length ? ["", "Recent visits:", ...recent] : []),
     "",
     footer(sender, p),

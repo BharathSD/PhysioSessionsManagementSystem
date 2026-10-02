@@ -4,11 +4,11 @@ import type { PatientSummary } from "./types";
 export function toSummary(row: Record<string, unknown>): PatientSummary {
   return {
     ...(row as PatientSummary),
-    rate_per_session: row.rate_per_session == null ? null : Number(row.rate_per_session),
     sessions_bought: Number(row.sessions_bought),
-    sessions_attended: Number(row.sessions_attended),
-    sessions_prior: Number(row.sessions_prior ?? 0),
+    sessions_used: Number(row.sessions_used),
     sessions_left: Number(row.sessions_left),
+    visits: Number(row.visits),
+    sessions_prior: Number(row.sessions_prior ?? 0),
     amount_billed: Number(row.amount_billed),
     amount_paid: Number(row.amount_paid),
     amount_due: Number(row.amount_due),

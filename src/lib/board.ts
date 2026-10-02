@@ -4,7 +4,7 @@
 import type { getContext } from "./context";
 import { toSummary } from "./data";
 import { formatDate } from "./format";
-import { addDays, describePlan, flexibleProgress, isScheduledDay, nextVisit, type Plan } from "./schedule";
+import { addDays, describePlan, flexibleProgress, isScheduledDay, nextVisit, planVisitType, type Plan } from "./schedule";
 import type { Appointment, PatientSummary, Session } from "./types";
 
 type Ctx = Awaited<ReturnType<typeof getContext>>;
@@ -15,6 +15,8 @@ export type BoardRow = {
   /** Why they're expected: a booking, a fixed day, or a flexible plan still short this week. */
   expected?: { kind: "booked" | "fixed" | "flexible"; label: string };
   next: string | null;
+  /** Visit type for this day: the booking's, the schedule's for this weekday, or the patient's usual. */
+  visitTypeId: string | null;
 };
 
 export async function getBoard({ supabase }: Ctx, date: string, search = "") {
@@ -42,9 +44,15 @@ export async function getBoard({ supabase }: Ctx, date: string, search = "") {
     const plan = planOf.get(p.id);
     const booked = bookingsOf.get(p.id) ?? [];
     const bookedToday = booked.find((b) => b.scheduled_date === date);
-    const row: BoardRow = { p, session: marked.get(p.id), next: nextVisit(plan, booked.map((b) => b.scheduled_date), date) };
+    const row: BoardRow = {
+      p,
+      session: marked.get(p.id),
+      next: nextVisit(plan, booked.map((b) => b.scheduled_date), date),
+      visitTypeId: (plan && planVisitType(plan, date)) ?? p.default_visit_type_id,
+    };
 
     if (bookedToday) {
+      row.visitTypeId = bookedToday.visit_type_id ?? row.visitTypeId;
       row.expected = { kind: "booked", label: `Booked on ${formatDate(bookedToday.booked_on)}` };
     } else if (plan && isScheduledDay(plan, date)) {
       row.expected = { kind: "fixed", label: describePlan(plan) };

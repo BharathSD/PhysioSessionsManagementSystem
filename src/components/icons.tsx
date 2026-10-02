@@ -27,6 +27,7 @@ const PATHS = {
   archive: "M21 8v13H3V8M1 3h22v5H1zM10 12h4",
   clinic: "M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6M12 7v4M10 9h4",
   install: "M12 3v12m0 0-4-4m4 4 4-4M5 21h14",
+  ban: "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM4.9 4.9l14.2 14.2",
 } as const;
 
 export type IconName = keyof typeof PATHS;

@@ -2,7 +2,7 @@ import { ActionForm } from "@/components/action-form";
 import { Icon } from "@/components/icons";
 import { PhoneField } from "@/components/phone-field";
 import { SubmitButton } from "@/components/submit-button";
-import { SectionTitle, initials } from "@/components/ui";
+import { LinkRow, SectionTitle, initials } from "@/components/ui";
 import { getContext } from "@/lib/context";
 import { countryOptions } from "@/lib/phone";
 import { signOut } from "../../login/actions";
@@ -26,6 +26,11 @@ export default async function ProfilePage() {
           <p className="truncate text-base text-muted">{email}</p>
           <p className="truncate text-sm text-muted">{clinic.name}</p>
         </div>
+      </div>
+
+      <SectionTitle>Money</SectionTitle>
+      <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+        <LinkRow href="/profile/fees" icon="rupee" title="Fees & visit types" detail="In-clinic, home visit, online… and no-show fees" />
       </div>
 
       <ActionForm action={updateSettings} submitLabel="Save changes" className="space-y-1">

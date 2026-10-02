@@ -11,6 +11,8 @@ export type Plan = {
   valid_from: string;
   valid_until: string | null;
   note: string | null;
+  visit_type_id: string | null;
+  day_visit_types: Record<string, string>; // ISO weekday → visit type, for mixed schedules
 };
 
 export const WEEKDAYS = [
@@ -140,4 +142,9 @@ export function nextVisit(plan: Plan | undefined, bookedDates: string[], after: 
     ...bookedDates.filter((d) => d > after),
   ].filter((d): d is string => Boolean(d));
   return candidates.sort()[0] ?? null;
+}
+
+/** Visit type for a day under this plan (a per-weekday override, else the plan's type). */
+export function planVisitType(plan: Plan, date: string): string | null {
+  return plan.day_visit_types?.[String(isoWeekday(date))] ?? plan.visit_type_id;
 }

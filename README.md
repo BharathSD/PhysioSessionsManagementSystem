@@ -4,8 +4,10 @@ Track physiotherapy session packages, attendance and payments: a simple manageme
 
 - **Today screen**: one tap to mark a patient ✓ attended or ✗ missed.
 - **WhatsApp receipts**: after marking, one tap opens WhatsApp with a ready-made message ("✅ Session 7 of 10 done, 3 left, ₹1,500 due"). It uses free click-to-chat links, so there's no WhatsApp API or TRAI/DLT setup.
-- **Balances**: sessions bought vs attended, amount billed vs paid. Only *attended* sessions use up a package. Visits beyond a package (or with no package) are billed at the patient's per-visit rate.
-- **Treatment plans**: fixed days (Mon/Wed/Fri, every 1–4 weeks) or flexible (N sessions every 1–4 weeks). Changing a plan keeps the old one in history. The app also shows the next session and when the package will run out.
+- **Billing as a ledger**: packages, visit fees, extra charges and discounts minus payments, with a running balance per patient (overpayments show as advance).
+- **Visit types & dated fees**: In-clinic, Home visit, Online, Assessment (+ your own). Fees have an "applies from" date, clinic-wide or per patient; the fee in force on the visit's day is saved on the visit, so price changes never alter past bills.
+- **Attendance outcomes**: Present, Absent, Cancelled by patient, Cancelled by clinic. Absences and patient cancellations can be charged (a package session if left, else the no-show / cancellation fee) and rescheduled in one step.
+- **Treatment plans**: fixed days (Mon/Wed/Fri, every 1–4 weeks, optionally a different visit type per day) or flexible (N sessions every 1–4 weeks). Changing a plan keeps the old one in history. The app also shows the next session and when the package will run out.
 - **Bookings**: one-off sessions with both the session date and the date it was booked.
 - **Moving from paper/Excel**: "Existing patient" mode records the current package (with its real start date), sessions already used (no dates needed), every past payment with its date, and past visits tapped on a calendar.
 - **Date fields**: type a date (`02/10/2026`, `2/10`, `02102026`, `today`), pick it from a calendar, or tap a shortcut.
@@ -60,6 +62,7 @@ Every table carries `clinic_id`, and RLS restricts each user to clinics they bel
 | `src/app/(app)/settings/` | Physio name, clinic name, UPI ID |
 | `src/app/(app)/actions.ts` | All server actions (writes) |
 | `src/lib/messages.ts` | WhatsApp receipt / summary text |
+| `src/lib/fees.ts` | Dated fee lookup and how each visit is priced (package or fee) |
 | `src/lib/schedule.ts` | Plan maths: who's expected on a day, next visit, projected package end |
 | `src/lib/phone.ts` | Country list, phone parsing to E.164 |
 | `src/lib/format.ts` | Dates (clinic timezone), money, `wa.me` links |
