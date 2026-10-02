@@ -102,3 +102,32 @@ export function canChargeMiss(
   const kind = o.status === "missed" ? "no_show" : "cancellation";
   return feeFor(rates, { patientId: o.patientId, kind, visitTypeId: o.visitTypeId, date: o.date }) !== null;
 }
+
+/** One step in a patient's fee history for a visit type. */
+export type FeeStep = { from: string; amount: number | null; source: "standard" | "custom" };
+
+/**
+ * A patient's fee for a visit type over time, oldest first: their own fee
+ * where they have one, otherwise the clinic standard (so changes to the
+ * standard fee show up too while the patient is on it).
+ */
+export function feeTimeline(rates: Rate[], patientId: string, visitTypeId: string): FeeStep[] {
+  const dates = [
+    ...new Set(
+      rates
+        .filter((r) => r.kind === "visit" && r.visit_type_id === visitTypeId && (r.patient_id === null || r.patient_id === patientId))
+        .map((r) => r.effective_from),
+    ),
+  ].sort();
+  const steps: FeeStep[] = [];
+  for (const from of dates) {
+    const own = patientFee(rates, patientId, "visit", visitTypeId, from);
+    const step: FeeStep =
+      typeof own === "number"
+        ? { from, amount: own, source: "custom" }
+        : { from, amount: standardFee(rates, "visit", visitTypeId, from), source: "standard" };
+    const prev = steps.at(-1);
+    if (!prev || prev.amount !== step.amount || prev.source !== step.source) steps.push(step);
+  }
+  return steps;
+}

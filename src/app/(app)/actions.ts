@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getBilling, packageSlots } from "@/lib/billing";
 import { getContext } from "@/lib/context";
-import { priceVisit, type VisitOutcome } from "@/lib/fees";
+import { patientFee, priceVisit, standardFee, type VisitOutcome } from "@/lib/fees";
 import { todayIn } from "@/lib/format";
 import { isCountryCode, toE164 } from "@/lib/phone";
 import { addDays } from "@/lib/schedule";
@@ -89,6 +89,33 @@ function pastDatesFrom(form: FormData, today: string): { attended: string[]; mis
   const missed = clean("missed_dates").filter((d) => !attended.includes(d));
   if ([...attended, ...missed].some((d) => d > today)) return { error: "Past sessions can't be in the future." };
   return { attended, missed };
+}
+
+/**
+ * Fees typed for each visit type (fee_<visit type id>). An empty box, or the
+ * same amount as the clinic standard on that date, means "use the standard fee".
+ * Returns the fee rows to save for the patient (only real changes).
+ */
+async function patientFeeChanges(form: FormData, patientId: string | null, from: string) {
+  const { activeTypes, rates } = await getBilling();
+  const changes: { visit_type_id: string; amount: number | null }[] = [];
+  for (const t of activeTypes) {
+    const raw = text(form, `fee_${t.id}`).replace(/[,₹\s]/g, "");
+    const typed = raw === "" ? null : Number(raw);
+    if (typed !== null && (Number.isNaN(typed) || typed < 0)) return { error: `${t.name}: the fee must be a number.` };
+
+    const std = standardFee(rates, "visit", t.id, from);
+    const wanted: number | "standard" = typed === null || typed === std ? "standard" : typed;
+    const current = patientId ? patientFee(rates, patientId, "visit", t.id, from) : undefined;
+    const currentlyCustom = typeof current === "number";
+
+    if (wanted === "standard") {
+      if (currentlyCustom) changes.push({ visit_type_id: t.id, amount: null }); // back to the standard fee
+    } else if (current !== wanted) {
+      changes.push({ visit_type_id: t.id, amount: wanted });
+    }
+  }
+  return changes;
 }
 
 function refresh() {
@@ -223,12 +250,11 @@ export async function createPatient(_prev: FormState, form: FormData): Promise<F
   const visitType = await visitTypeFrom(form);
   const sessions = text(form, "sessions") ? int(form, "sessions") : 0;
   const price = money(form, "price");
-  const customFee = text(form, "custom_fee") ? money(form, "custom_fee") : null;
   const usedBefore = text(form, "used_before") ? int(form, "used_before") : 0;
   if (Number.isNaN(sessions) || sessions < 0) return { error: "Number of sessions must be a whole number." };
   if (Number.isNaN(usedBefore) || usedBefore < 0) return { error: "“Sessions already done” must be a whole number." };
   if (usedBefore > 0 && sessions === 0) return { error: "Add the package these sessions belong to." };
-  if ([price, customFee ?? 0].some((n) => Number.isNaN(n) || n < 0)) return { error: "Amounts must be numbers." };
+  if (Number.isNaN(price) || price < 0) return { error: "Package price must be a number." };
   const packageStart = isoDate(form, "package_start") ?? today;
   if (packageStart > today) return { error: "Package start date can't be in the future." };
 
@@ -240,6 +266,11 @@ export async function createPatient(_prev: FormState, form: FormData): Promise<F
 
   const plan = await planFrom(form, today);
   if (plan && "error" in plan) return plan;
+
+  // The patient's own fees apply from the earliest date we have for them, so old visits use them too.
+  const feesFrom = [today, packageStart, ...past.attended, ...past.missed].sort()[0];
+  const fees = await patientFeeChanges(form, null, feesFrom);
+  if ("error" in fees) return fees;
 
   const { data: patient, error } = await supabase
     .from("patients")
@@ -257,12 +288,10 @@ export async function createPatient(_prev: FormState, form: FormData): Promise<F
     return { error: message };
   };
 
-  if (customFee !== null && visitType) {
-    // Applies from the earliest date we have for this patient, so old visits use it too.
-    const from = [today, packageStart, ...past.attended, ...past.missed].sort()[0];
+  if (fees.length > 0) {
     const { error: feeError } = await supabase
       .from("rates")
-      .insert({ clinic_id: clinic.id, patient_id: patient.id, kind: "visit", visit_type_id: visitType, amount: customFee, effective_from: from });
+      .insert(fees.map((f) => ({ clinic_id: clinic.id, patient_id: patient.id, kind: "visit", effective_from: feesFrom, ...f })));
     if (feeError) return failed(dbError(feeError));
   }
 
@@ -677,16 +706,19 @@ export async function setClinicFee(_prev: FormState, form: FormData): Promise<Fo
   redirect(`/profile/fees?${new URLSearchParams({ done: "Fee saved" })}`);
 }
 
-export async function setPatientFee(patientId: string, _prev: FormState, form: FormData): Promise<FormState> {
+/** Save a patient's fees for every visit type at once, from one date. */
+export async function setPatientFees(patientId: string, _prev: FormState, form: FormData): Promise<FormState> {
   const ctx = await getContext();
-  const input = feeFormInput(form, todayIn(ctx.clinic.timezone));
-  if ("error" in input) return input;
-  const visitTypeId = await visitTypeFrom(form);
-  if (!visitTypeId) return { error: "Pick the visit type." };
+  const from = isoDate(form, "effective_from") ?? todayIn(ctx.clinic.timezone);
+  const changes = await patientFeeChanges(form, patientId, from);
+  if ("error" in changes) return changes;
+  if (changes.length === 0) return { error: "Nothing changed — edit a fee first." };
 
-  const err = await saveRate(ctx, { patient_id: patientId, kind: "visit", visit_type_id: visitTypeId, amount: input.amount, effective_from: input.from });
-  if (err) return { error: err };
-  backToPatient(patientId, "account", input.amount === null ? "Back to standard fee" : "Fee saved");
+  for (const c of changes) {
+    const err = await saveRate(ctx, { patient_id: patientId, kind: "visit", effective_from: from, ...c });
+    if (err) return { error: err };
+  }
+  backToPatient(patientId, "overview", `Fees saved (${changes.length} changed)`);
 }
 
 export async function deleteRate(rateId: string) {

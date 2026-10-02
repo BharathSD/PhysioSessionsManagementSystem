@@ -3,6 +3,7 @@ import { Icon } from "@/components/icons";
 import { PageHeader } from "@/components/ui";
 import { getBilling } from "@/lib/billing";
 import { getContext } from "@/lib/context";
+import { standardFee } from "@/lib/fees";
 import { firstParam } from "@/lib/data";
 import { todayIn } from "@/lib/format";
 import { AddPatientWizard } from "./wizard";
@@ -11,7 +12,9 @@ export const metadata = { title: "Add patient" };
 
 export default async function NewPatientPage(props: PageProps<"/patients/new">) {
   const type = firstParam((await props.searchParams).type);
-  const [{ clinic }, { activeTypes }] = await Promise.all([getContext(), getBilling()]);
+  const [{ clinic }, { activeTypes, rates }] = await Promise.all([getContext(), getBilling()]);
+  const today = todayIn(clinic.timezone);
+  const defaultFees = Object.fromEntries(activeTypes.map((t) => [t.id, standardFee(rates, "visit", t.id, today)]));
 
   if (type !== "new" && type !== "existing") {
     return (
@@ -41,7 +44,15 @@ export default async function NewPatientPage(props: PageProps<"/patients/new">) 
         back={{ href: "/patients/new", label: "Back" }}
         title={type === "existing" ? "Add existing patient" : "Add new patient"}
       />
-      <AddPatientWizard key={type} existing={type === "existing"} today={todayIn(clinic.timezone)} clinicCountry={clinic.country} types={activeTypes} />
+      <AddPatientWizard
+        key={type}
+        existing={type === "existing"}
+        today={today}
+        clinicCountry={clinic.country}
+        types={activeTypes}
+        defaultFees={defaultFees}
+        currency={clinic.currency}
+      />
     </div>
   );
 }

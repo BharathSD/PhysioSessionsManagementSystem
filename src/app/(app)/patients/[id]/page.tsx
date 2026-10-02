@@ -236,7 +236,31 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
           </div>
         </div>
         <SessionDots used={Math.min(p.sessions_used, p.sessions_bought)} total={p.sessions_bought} />
-        <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-3 text-sm">
+        <div className="flex items-start justify-between gap-3 border-t border-border pt-3 text-sm">
+          <span>
+            <span className="text-muted">Fees: </span>
+            {activeTypes
+              .map((t) => {
+                const own = patientFee(rates, p.id, "visit", t.id, today);
+                const fee = typeof own === "number" ? own : standardFee(rates, "visit", t.id, today);
+                return fee === null ? null : (
+                  <span key={t.id} className="font-medium">
+                    {t.name.replace(/ session$/, "")} {money(fee)}
+                    {typeof own === "number" && <span className="font-normal text-brand"> (own)</span>}
+                  </span>
+                );
+              })
+              .filter(Boolean)
+              .flatMap((el, i) => (i === 0 ? [el] : [<span key={`sep${i}`} className="text-muted"> · </span>, el]))}
+            {activeTypes.every((t) => standardFee(rates, "visit", t.id, today) === null && typeof patientFee(rates, p.id, "visit", t.id, today) !== "number") && (
+              <span className="text-muted">not set</span>
+            )}
+          </span>
+          <Link href={`${base}/fees`} className="shrink-0 font-medium text-brand">
+            Edit fees
+          </Link>
+        </div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
           <span>
             <span className="text-muted">Schedule: </span>
             <span className="font-medium">{plan ? describePlan(plan) : "None"}</span>
@@ -492,7 +516,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
                 const fee = typeof own === "number" ? own : std;
                 return (
                   <li key={t.id}>
-                    <Link href={`${base}/fee?type=${t.id}`} className="flex items-center gap-3 px-4 py-3 active:bg-surface-2">
+                    <Link href={`${base}/fees`} className="flex items-center gap-3 px-4 py-3 active:bg-surface-2">
                       <span className="min-w-0 flex-1">
                         <span className="block font-medium">{t.name}</span>
                         <span className="block text-sm text-muted">{typeof own === "number" ? "Custom fee for this patient" : "Standard fee"}</span>

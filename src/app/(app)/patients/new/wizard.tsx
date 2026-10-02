@@ -2,6 +2,7 @@
 
 import { useActionState, useRef, useState } from "react";
 import { DateField } from "@/components/date-field";
+import { FeeInputs } from "@/components/fee-inputs";
 import { Icon } from "@/components/icons";
 import { MethodPicker } from "@/components/method-picker";
 import { MultiDateField } from "@/components/multi-date-field";
@@ -24,11 +25,15 @@ export function AddPatientWizard({
   today,
   clinicCountry,
   types,
+  defaultFees,
+  currency,
 }: {
   existing: boolean;
   today: string;
   clinicCountry: string;
   types: VisitType[];
+  defaultFees: Record<string, number | null>;
+  currency: string;
 }) {
   const [state, action] = useActionState(createPatient, undefined);
   const [step, setStep] = useState(0);
@@ -85,12 +90,7 @@ export function AddPatientWizard({
           </>
         )}
         <VisitTypePicker types={types} name="package_visit_type" label="Package sessions are for" anyLabel="Any visit type" />
-        <label className="field">
-          <span>
-            Special fee per visit for this patient <em>(optional — leave empty to use your standard fee)</em>
-          </span>
-          <input name="custom_fee" inputMode="decimal" placeholder="e.g. 500" />
-        </label>
+
         {!existing && (
           <div className="space-y-3 rounded-2xl bg-surface-2 p-3">
             <p className="text-base font-medium">Payment received now</p>
@@ -118,13 +118,21 @@ export function AddPatientWizard({
     body: <MultiDateField today={today} />,
   };
 
+  const feesStep: Step = {
+    title: "Fees",
+    hint: "Your default fees are filled in. Change any that are different for this patient — you can update them any time.",
+    body: <FeeInputs types={types} current={defaultFees} defaults={defaultFees} currency={currency} />,
+  };
+
   const scheduleStep: Step = {
     title: "Schedule",
     hint: "Which days they come. You can change this any time as they progress.",
     body: <PlanFields key={usualType} today={today} types={types} defaultType={usualType} allowNone />,
   };
 
-  const steps = existing ? [details, packageStep, paymentsStep, visitsStep, scheduleStep] : [details, packageStep, scheduleStep];
+  const steps = existing
+    ? [details, packageStep, paymentsStep, feesStep, visitsStep, scheduleStep]
+    : [details, packageStep, feesStep, scheduleStep];
   const last = step === steps.length - 1;
 
   function goNext() {
