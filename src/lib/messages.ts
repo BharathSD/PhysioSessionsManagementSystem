@@ -67,6 +67,13 @@ export function paymentReceipt(p: PatientSummary, payment: Pick<Payment, "amount
   ].join("\n");
 }
 
+/** "Pain: 8 → 3 (since 11 Sep)" once at least two visits have a pain score. */
+function painLine(sessions: Session[]): string[] {
+  const scored = sessions.filter((s) => s.pain_score !== null && s.status === "attended").sort((a, b) => a.session_date.localeCompare(b.session_date));
+  if (scored.length < 2) return [];
+  return [`Pain: ${scored[0].pain_score} → ${scored.at(-1)!.pain_score} (since ${formatDate(scored[0].session_date)})`];
+}
+
 export function statement(p: PatientSummary, sessions: Session[], sender: Sender, typeName: (id: string | null) => string): string {
   const currency = sender.clinic.currency;
   const icon = { attended: "✅", missed: "❌", cancelled_patient: "↩️", cancelled_clinic: "↩️" };
@@ -80,6 +87,7 @@ export function statement(p: PatientSummary, sessions: Session[], sender: Sender
     "",
     `Visits: ${p.visits}`,
     ...(p.sessions_bought > 0 ? [`Package: ${p.sessions_used} of ${p.sessions_bought} sessions used`] : []),
+    ...painLine(sessions),
     `Billed: ${formatMoney(p.amount_billed, currency)} · Paid: ${formatMoney(p.amount_paid, currency)}`,
     balanceLine(p, currency),
     ...(recent.length ? ["", "Recent visits:", ...recent] : []),

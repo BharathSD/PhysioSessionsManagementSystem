@@ -5,6 +5,7 @@ import { useFormAction } from "@/lib/use-form-action";
 import type { FormState } from "@/app/(app)/actions";
 import { DateField } from "@/components/date-field";
 import { Icon } from "@/components/icons";
+import { PainPicker } from "@/components/pain";
 import { SubmitButton } from "@/components/submit-button";
 import { VisitTypePicker } from "@/components/visit-type-picker";
 import { addDays } from "@/lib/schedule";
@@ -80,6 +81,8 @@ export function AttendanceForm({
       </fieldset>
 
       <VisitTypePicker types={types} defaultValue={defaultType} />
+
+      {outcome === "attended" && <PainPicker />}
 
       {chargeable && (
         <label className="flex cursor-pointer items-start gap-3 rounded-2xl bg-surface-2 p-3">

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { SessionDots } from "@/components/balance";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Icon } from "@/components/icons";
+import { QuickPain } from "@/components/pain";
 import { SubmitButton } from "@/components/submit-button";
 import { ActionTile, PageHeader, SectionTitle } from "@/components/ui";
 import { VisitCost } from "@/components/visit-cost";
@@ -16,7 +17,8 @@ import { formatPhone } from "@/lib/phone";
 import { describePlan, nextVisit, planOn, planVisitType, projectedEnd, WEEKDAYS, type Plan } from "@/lib/schedule";
 import { STATUS } from "@/lib/status";
 import type { Appointment, Charge, Package, Payment, Session } from "@/lib/types";
-import { cancelBooking, deleteCharge, deletePackage, deletePayment, deleteSession, endPlan, markToday } from "../../actions";
+import { Overview, type PatientDetails } from "./overview";
+import { deleteCharge, deletePackage, deletePayment, deleteSession, endPlan, markToday } from "../../actions";
 
 const TABS = [
   { key: "overview", label: "Overview" },
@@ -48,7 +50,18 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
   const today = todayIn(clinic.timezone);
   const p = await loadPatient(ctx, id);
 
-  const [{ activeTypes, rates, typeName }, slots, { data: sessions }, { data: payments }, { data: packages }, { data: schedules }, { data: appts }, { data: extras }] =
+  const [
+    { activeTypes, visitTypes, rates, typeName },
+    slots,
+    { data: sessions },
+    { data: payments },
+    { data: packages },
+    { data: schedules },
+    { data: appts },
+    { data: extras },
+    { data: details },
+    { data: allBookings },
+  ] =
     await Promise.all([
       getBilling(),
       packageSlots(ctx, id),
@@ -63,6 +76,12 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
       supabase.from("schedules").select("*").eq("patient_id", id).order("valid_from", { ascending: false }),
       supabase.from("appointments").select("*").eq("patient_id", id).eq("status", "booked").gte("scheduled_date", today).order("scheduled_date"),
       supabase.from("charges").select("*").eq("patient_id", id).order("charge_date"),
+      supabase
+        .from("patients")
+        .select("date_of_birth, dob_is_estimate, gender, address, emergency_name, emergency_phone, referred_by, injury_date, goals, precautions")
+        .eq("id", id)
+        .maybeSingle(),
+      supabase.from("appointments").select("booked_on, scheduled_date, status, visit_type_id").eq("patient_id", id).order("booked_on", { ascending: false }),
     ]);
 
   const visits = (sessions ?? []) as Visit[];
@@ -199,6 +218,17 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
         )}
       </div>
 
+      {/* Pinned precautions — on every tab, before anything else */}
+      {details?.precautions && (
+        <div role="note" className="mb-3 flex items-start gap-3 rounded-2xl border border-warn/40 bg-warn-soft p-3 text-base">
+          <Icon name="alert" className="mt-0.5 size-5 shrink-0 text-warn" />
+          <div>
+            <p className="text-sm font-semibold text-warn">Precautions</p>
+            <p className="whitespace-pre-line">{details.precautions}</p>
+          </div>
+        </div>
+      )}
+
       {/* Status at a glance */}
       <section className="card space-y-4">
         <div className="grid grid-cols-2 gap-4">
@@ -296,6 +326,9 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
                 })}
               />
             </div>
+            {todaySession.status === "attended" && (
+              <QuickPain sessionId={todaySession.id} score={todaySession.pain_score} editHref={`${base}/visits/${todaySession.id}`} />
+            )}
             <div className="flex gap-2">
               {p.phone && (
                 <a
@@ -364,54 +397,26 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
 
       <div className="pt-2">
         {tab === "overview" && (
-          <>
-            <SectionTitle>Coming up</SectionTitle>
-            <div className="card space-y-3">
-              <div className="grid grid-cols-2 gap-3 text-base">
-                <div>
-                  <p className="text-sm text-muted">Next session</p>
-                  <p className="font-medium">{next ? formatDay(next) : "Not booked"}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted">Package runs out</p>
-                  <p className="font-medium">{ends ? `${ends.approximate ? "Around " : ""}${formatDay(ends.date)}` : "—"}</p>
-                </div>
-              </div>
-              {upcoming.length > 0 && (
-                <ul className="divide-y divide-border border-t border-border">
-                  {upcoming.map((a) => (
-                    <li key={a.id} className="flex items-center gap-3 py-2.5">
-                      <Icon name="calendar" className="size-5 shrink-0 text-brand" />
-                      <span className="flex-1">
-                        <span className="block font-medium">
-                          {a.scheduled_date === today ? "Today" : formatDay(a.scheduled_date)} · {typeName(a.visit_type_id ?? p.default_visit_type_id)}
-                        </span>
-                        <span className="block text-sm text-muted">
-                          Booked on {formatDate(a.booked_on)}
-                          {a.note ? ` · ${a.note}` : ""}
-                        </span>
-                      </span>
-                      <form action={cancelBooking.bind(null, a.id)}>
-                        <ConfirmButton className="btn min-h-10 px-3 text-sm text-muted" confirmText="Cancel booking?">
-                          Cancel
-                        </ConfirmButton>
-                      </form>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            {p.phone && (
-              <a
-                href={whatsappLink(p.phone, statement(p, visits, sender, typeName))}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn btn-whatsapp mt-3 w-full text-base"
-              >
-                <Icon name="send" /> Send full summary on WhatsApp
-              </a>
-            )}
-          </>
+          <Overview
+            p={p}
+            details={details as PatientDetails | null}
+            visits={visits}
+            payments={paid}
+            packages={pkgs}
+            charges={charges}
+            plans={plans}
+            plan={plan}
+            upcoming={upcoming}
+            allBookings={allBookings ?? []}
+            patientRates={rates.filter((r) => r.patient_id === p.id)}
+            ends={ends}
+            today={today}
+            currency={clinic.currency}
+            typeName={typeName}
+            typeNames={Object.fromEntries(visitTypes.map((t) => [t.id, t.name]))}
+            summaryLink={p.phone ? whatsappLink(p.phone, statement(p, visits, sender, typeName)) : null}
+            base={base}
+          />
         )}
 
         {tab === "visits" && (
@@ -449,6 +454,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
                           date: v.session_date,
                         })}
                       />
+                      {v.pain_score !== null && <span className="block text-sm text-muted">Pain {v.pain_score}/10</span>}
                       {v.appointments && <span className="block text-sm text-muted">Booked on {formatDate(v.appointments.booked_on)}</span>}
                       {v.notes && <span className="block text-sm text-muted">{v.notes}</span>}
                     </span>

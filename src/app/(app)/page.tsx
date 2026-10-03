@@ -159,7 +159,7 @@ export default async function HomePage() {
             <div key={day} className="flex flex-col items-center gap-1">
               <span className="text-sm font-semibold">{count || "–"}</span>
               <div className="flex h-16 w-full items-end">
-                <div className="w-full rounded-md bg-brand/80" style={{ height: `${count ? Math.max(12, (count / busiest) * 100) : 4}%`, opacity: count ? 1 : 0.25 }} />
+                <div className="w-full rounded-md bg-chart" style={{ height: `${count ? Math.max(12, (count / busiest) * 100) : 4}%`, opacity: count ? 1 : 0.25 }} />
               </div>
               <span className="text-xs text-muted">
                 {new Intl.DateTimeFormat("en-IN", { weekday: "short", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`))}

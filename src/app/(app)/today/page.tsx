@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BalanceChips } from "@/components/balance";
 import { Icon } from "@/components/icons";
+import { QuickPain } from "@/components/pain";
 import { SubmitButton } from "@/components/submit-button";
 import { EmptyState, PageHeader, SectionTitle } from "@/components/ui";
 import { VisitCost } from "@/components/visit-cost";
@@ -19,6 +20,7 @@ export const metadata = { title: "Today" };
 
 type RowContext = {
   sender: { clinic: Clinic; physioName: string };
+  addresses: Map<string, string>;
   rates: Rate[];
   typeName: (id: string | null | undefined) => string;
   today: string;
@@ -28,8 +30,18 @@ export default async function TodayPage(props: PageProps<"/today">) {
   const q = firstParam((await props.searchParams).q);
   const ctx = await getContext();
   const today = todayIn(ctx.clinic.timezone);
-  const [{ expected, others, seen }, { rates, typeName }] = await Promise.all([getBoard(ctx, today, q), getBilling()]);
-  const rc: RowContext = { sender: { clinic: ctx.clinic, physioName: ctx.member.display_name }, rates, typeName, today };
+  const [{ expected, others, seen }, { rates, typeName }, { data: withAddress }] = await Promise.all([
+    getBoard(ctx, today, q),
+    getBilling(),
+    ctx.supabase.from("patients").select("id, address").eq("archived", false).not("address", "is", null),
+  ]);
+  const rc: RowContext = {
+    sender: { clinic: ctx.clinic, physioName: ctx.member.display_name },
+    addresses: new Map((withAddress ?? []).map((r) => [r.id as string, r.address as string])),
+    rates,
+    typeName,
+    today,
+  };
   const done = expected.filter((r) => r.session).length;
 
   return (
@@ -98,6 +110,8 @@ function PatientRow({ row, rc }: { row: BoardRow; rc: RowContext }) {
   const { p, session, expected, next, visitTypeId } = row;
   const status = session ? STATUS[session.status] : null;
   const sessionType = session?.visit_type_id ?? visitTypeId;
+  // Home visits show where to go.
+  const address = /home/i.test(rc.typeName(sessionType)) ? rc.addresses.get(p.id) : undefined;
 
   return (
     <li className="card">
@@ -123,6 +137,17 @@ function PatientRow({ row, rc }: { row: BoardRow; rc: RowContext }) {
           </div>
         )}
       </Link>
+      {address && (
+        <a
+          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 flex items-start gap-2 rounded-xl bg-surface-2 px-3 py-2 text-sm"
+        >
+          <span className="min-w-0 flex-1 truncate">📍 {address}</span>
+          <span className="shrink-0 font-medium text-brand">Maps</span>
+        </a>
+      )}
 
       {!session ? (
         <>
@@ -162,6 +187,11 @@ function PatientRow({ row, rc }: { row: BoardRow; rc: RowContext }) {
               })}
             />
           </div>
+          {session.status === "attended" && (
+            <div className="mt-3">
+              <QuickPain sessionId={session.id} score={session.pain_score} editHref={`/patients/${p.id}/visits/${session.id}`} />
+            </div>
+          )}
           <div className="mt-3 flex gap-2">
             {p.phone ? (
               <a

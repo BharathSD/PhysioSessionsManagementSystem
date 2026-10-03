@@ -3,6 +3,7 @@ import { ActionForm } from "@/components/action-form";
 import { ChoiceWithAmount } from "@/components/choice-with-amount";
 import { ConfirmButton } from "@/components/confirm-button";
 import { DateField } from "@/components/date-field";
+import { PainPicker } from "@/components/pain";
 import { PageHeader } from "@/components/ui";
 import { VisitTypePicker } from "@/components/visit-type-picker";
 import { getBilling, packageSlots } from "@/lib/billing";
@@ -57,6 +58,8 @@ export default async function EditVisitPage(props: PageProps<"/patients/[id]/vis
         </fieldset>
 
         <VisitTypePicker types={types} defaultValue={s.visit_type_id} />
+
+        <PainPicker defaultValue={s.pain_score} />
 
         <ChoiceWithAmount
           legend="How is it paid for?"

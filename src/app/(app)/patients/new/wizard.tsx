@@ -6,6 +6,7 @@ import { FeeInputs } from "@/components/fee-inputs";
 import { Icon } from "@/components/icons";
 import { MethodPicker } from "@/components/method-picker";
 import { MultiDateField } from "@/components/multi-date-field";
+import { ClinicalFields, PatientDetailsFields } from "@/components/patient-details-fields";
 import { PaymentRows } from "@/components/payment-rows";
 import { PhoneField } from "@/components/phone-field";
 import { PlanFields } from "@/components/plan-fields";
@@ -52,12 +53,21 @@ export function AddPatientWizard({
         </label>
         <PhoneField label={<span>WhatsApp number <em>(to send receipts)</em></span>} clinicCountry={clinicCountry} />
         <label className="field">
-          <span>Condition <em>(optional)</em></span>
+          <span>Condition / diagnosis <em>(optional)</em></span>
           <input name="condition" placeholder="e.g. Knee rehab, frozen shoulder" />
         </label>
         <div onChange={(e) => setUsualType((e.target as HTMLInputElement).value)}>
           <VisitTypePicker types={types} label="Usually seen as" defaultValue={usualType} />
         </div>
+        <details className="rounded-2xl bg-surface-2 p-3">
+          <summary className="cursor-pointer text-base font-medium">More details (optional) — goals, precautions, age, address…</summary>
+          <div className="mt-4 space-y-6">
+            <ClinicalFields today={today} />
+            <div className="border-t border-border pt-4">
+              <PatientDetailsFields today={today} clinicCountry={clinicCountry} />
+            </div>
+          </div>
+        </details>
       </>
     ),
   };

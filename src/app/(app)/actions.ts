@@ -7,6 +7,7 @@ import { getContext } from "@/lib/context";
 import { patientFee, priceVisit, standardFee, type VisitOutcome } from "@/lib/fees";
 import { todayIn } from "@/lib/format";
 import { isCountryCode, toE164 } from "@/lib/phone";
+import { dobForAge } from "@/lib/overview";
 import { addDays } from "@/lib/schedule";
 import type { PaymentMethod, RateKind } from "@/lib/types";
 
@@ -42,6 +43,43 @@ function phoneFrom(form: FormData, clinicCountry: string): string | null | undef
   const raw = text(form, "phone");
   if (!raw) return undefined;
   return toE164(raw, text(form, "phone_country") || clinicCountry);
+}
+
+/** Optional personal details from PatientDetailsFields. */
+function personalFrom(form: FormData, today: string, clinicCountry: string) {
+  const dob = isoDate(form, "date_of_birth");
+  const age = text(form, "age") ? int(form, "age") : null;
+  if (dob && dob > today) return { error: "Date of birth can't be in the future." };
+  if (age !== null && (Number.isNaN(age) || age < 0 || age > 120)) return { error: "Age must be a number between 0 and 120." };
+
+  const rawEmergency = text(form, "emergency_phone");
+  const emergencyPhone = rawEmergency ? toE164(rawEmergency, text(form, "emergency_phone_country") || clinicCountry) : null;
+  if (rawEmergency && !emergencyPhone) return { error: "The emergency contact number doesn't look right." };
+
+  const injury = isoDate(form, "injury_date");
+  if (injury && injury > today) return { error: "The injury / surgery date can't be in the future." };
+
+  const gender = text(form, "gender");
+  return {
+    referred_by: text(form, "referred_by") || null,
+    injury_date: injury,
+    goals: text(form, "goals") || null,
+    precautions: text(form, "precautions") || null,
+    date_of_birth: dob ?? (age !== null ? dobForAge(age, today) : null),
+    dob_is_estimate: !dob && age !== null,
+    gender: ["female", "male", "other"].includes(gender) ? gender : null,
+    address: text(form, "address") || null,
+    emergency_name: text(form, "emergency_name") || null,
+    emergency_phone: emergencyPhone,
+  };
+}
+
+/** Optional 0–10 pain score: null = not recorded, undefined = invalid. */
+function painFrom(form: FormData): number | null | undefined {
+  const raw = text(form, "pain_score");
+  if (raw === "") return null;
+  const n = Number(raw);
+  return Number.isInteger(n) && n >= 0 && n <= 10 ? n : undefined;
 }
 
 /** A visit type id from the form, only if it belongs to this clinic. */
@@ -247,6 +285,9 @@ export async function createPatient(_prev: FormState, form: FormData): Promise<F
   const phone = phoneFrom(form, clinic.country);
   if (phone === null) return { error: "That phone number doesn't look right for the selected country." };
 
+  const personal = personalFrom(form, today, clinic.country);
+  if ("error" in personal) return personal;
+
   const visitType = await visitTypeFrom(form);
   const sessions = text(form, "sessions") ? int(form, "sessions") : 0;
   const price = money(form, "price");
@@ -274,7 +315,14 @@ export async function createPatient(_prev: FormState, form: FormData): Promise<F
 
   const { data: patient, error } = await supabase
     .from("patients")
-    .insert({ clinic_id: clinic.id, name, phone: phone ?? null, condition: text(form, "condition") || null, default_visit_type_id: visitType })
+    .insert({
+      clinic_id: clinic.id,
+      name,
+      phone: phone ?? null,
+      condition: text(form, "condition") || null,
+      default_visit_type_id: visitType,
+      ...personal,
+    })
     .select("id")
     .single();
   if (error) {
@@ -335,10 +383,18 @@ export async function updatePatient(patientId: string, _prev: FormState, form: F
   if (!name) return { error: "Name can't be empty." };
   const phone = phoneFrom(form, clinic.country);
   if (phone === null) return { error: "That phone number doesn't look right for the selected country." };
+  const personal = personalFrom(form, todayIn(clinic.timezone), clinic.country);
+  if ("error" in personal) return personal;
 
   const { error } = await supabase
     .from("patients")
-    .update({ name, phone: phone ?? null, condition: text(form, "condition") || null, default_visit_type_id: await visitTypeFrom(form) })
+    .update({
+      name,
+      phone: phone ?? null,
+      condition: text(form, "condition") || null,
+      default_visit_type_id: await visitTypeFrom(form),
+      ...personal,
+    })
     .eq("id", patientId);
   if (error) return { error: error.code === "23505" ? "Another patient already has this phone number." : dbError(error) };
   backToPatient(patientId, "overview", "Details saved");
@@ -360,7 +416,14 @@ export async function setArchived(patientId: string, archived: boolean) {
 // fee in force on the visit's date, and stored on the visit.
 // ---------------------------------------------------------------------------
 
-type VisitInput = { date: string; status: VisitOutcome; visitTypeId: string | null; chargeIt: boolean; notes: string | null };
+type VisitInput = {
+  date: string;
+  status: VisitOutcome;
+  visitTypeId: string | null;
+  chargeIt: boolean;
+  notes: string | null;
+  pain?: number | null;
+};
 
 async function recordVisit(ctx: Ctx, patientId: string, v: VisitInput): Promise<{ id: string } | { error: string }> {
   const { supabase, clinic } = ctx;
@@ -393,6 +456,7 @@ async function recordVisit(ctx: Ctx, patientId: string, v: VisitInput): Promise<
       status: v.status,
       visit_type_id: visitTypeId,
       notes: v.notes,
+      pain_score: v.status === "attended" ? (v.pain ?? null) : null,
       ...priced,
     })
     .select("id")
@@ -426,6 +490,9 @@ export async function recordAttendance(patientId: string, date: string, _prev: F
   const reschedule = status === "attended" ? null : isoDate(form, "reschedule_date");
   if (reschedule && reschedule <= date) return { error: "Pick a new date after the cancelled one." };
 
+  const pain = painFrom(form);
+  if (pain === undefined) return { error: "Pain score must be between 0 and 10." };
+
   const visitTypeId = await visitTypeFrom(form);
   const result = await recordVisit(ctx, patientId, {
     date,
@@ -433,6 +500,7 @@ export async function recordAttendance(patientId: string, date: string, _prev: F
     visitTypeId,
     chargeIt: status !== "attended" && text(form, "charge") === "on",
     notes: text(form, "notes") || null,
+    pain,
   });
   if ("error" in result) return result;
 
@@ -492,6 +560,8 @@ export async function updateSession(sessionId: string, _prev: FormState, form: F
   if (!date) return { error: "Pick the date." };
   if (date > today) return { error: "The date can't be in the future." };
   if (!STATUSES.includes(status)) return { error: "Pick what happened." };
+  const pain = painFrom(form);
+  if (pain === undefined) return { error: "Pain score must be between 0 and 10." };
 
   if (date !== s.session_date) {
     const { data: clash } = await supabase.from("sessions").select("id").eq("patient_id", s.patient_id).eq("session_date", date).neq("id", sessionId).maybeSingle();
@@ -522,10 +592,27 @@ export async function updateSession(sessionId: string, _prev: FormState, form: F
 
   const { error } = await supabase
     .from("sessions")
-    .update({ session_date: date, status, visit_type_id: await visitTypeFrom(form), notes: text(form, "notes") || null, ...price })
+    .update({
+      session_date: date,
+      status,
+      visit_type_id: await visitTypeFrom(form),
+      notes: text(form, "notes") || null,
+      pain_score: status === "attended" ? pain : null,
+      ...price,
+    })
     .eq("id", sessionId);
   if (error) return { error: dbError(error) };
   backToPatient(s.patient_id, "visits", "Visit updated");
+}
+
+/** One-tap pain score after marking Present (the tapped button carries the score). */
+export async function setPainScore(sessionId: string, form: FormData) {
+  const pain = painFrom(form);
+  if (pain === undefined) throw new Error("Pain score must be between 0 and 10.");
+  const { supabase } = await getContext();
+  const { error } = await supabase.from("sessions").update({ pain_score: pain }).eq("id", sessionId).eq("status", "attended");
+  if (error) throw new Error(dbError(error));
+  refresh();
 }
 
 /** Remove a visit from its edit screen and go back to the patient's visits. */

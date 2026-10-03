@@ -56,6 +56,7 @@ export type Session = {
   appointment_id: string | null;
   visit_type_id: string | null;
   charge: number;
+  pain_score: number | null;
   session_date: string;
   status: SessionStatus;
   notes: string | null;

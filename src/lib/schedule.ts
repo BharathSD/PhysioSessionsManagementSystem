@@ -43,7 +43,7 @@ export function isoWeekday(date: string): number {
   return ((new Date(toMs(date)).getUTCDay() + 6) % 7) + 1;
 }
 
-function mondayOf(date: string): string {
+export function mondayOf(date: string): string {
   return addDays(date, 1 - isoWeekday(date));
 }
 
