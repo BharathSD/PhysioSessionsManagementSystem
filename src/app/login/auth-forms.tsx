@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useFormAction } from "@/lib/use-form-action";
+import { PasswordInput } from "@/components/password-input";
 import { SubmitButton } from "@/components/submit-button";
 import { signIn, signUp } from "./actions";
 
@@ -46,9 +47,8 @@ export function AuthForms() {
         </label>
         <label className="field">
           <span>Password</span>
-          <input
+          <PasswordInput
             name="password"
-            type="password"
             required
             minLength={mode === "signup" ? 8 : undefined}
             autoComplete={mode === "signin" ? "current-password" : "new-password"}
