@@ -32,6 +32,7 @@ export function DateField({
   max,
   required,
   shortcuts = ["today"],
+  onChange,
 }: {
   name: string;
   label: React.ReactNode;
@@ -41,6 +42,8 @@ export function DateField({
   max?: string;
   required?: boolean;
   shortcuts?: Shortcut[];
+  /** Called with the ISO date ("" when empty or not yet valid). */
+  onChange?: (iso: string) => void;
 }) {
   const [value, setValue] = useState(defaultValue);
   const [text, setText] = useState(defaultValue ? toDisplay(defaultValue) : "");
@@ -96,6 +99,7 @@ export function DateField({
 
   function choose(date: string) {
     setValue(date);
+    onChange?.(date);
     setText(toDisplay(date));
     setMonth(date.slice(0, 7));
     setOpen(false);
@@ -105,6 +109,7 @@ export function DateField({
     setText(next);
     const p = parseDateInput(next, today);
     setValue(p ?? "");
+    onChange?.(p ?? "");
     if (p) setMonth(p.slice(0, 7));
   }
 

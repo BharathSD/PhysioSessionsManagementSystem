@@ -452,11 +452,9 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
                       {v.appointments && <span className="block text-sm text-muted">Booked on {formatDate(v.appointments.booked_on)}</span>}
                       {v.notes && <span className="block text-sm text-muted">{v.notes}</span>}
                     </span>
-                    <form action={deleteSession.bind(null, v.id)}>
-                      <ConfirmButton className="btn min-h-10 px-3 text-sm text-muted" confirmText="Remove?">
-                        Remove
-                      </ConfirmButton>
-                    </form>
+                    <Link href={`${base}/visits/${v.id}`} className="btn min-h-10 shrink-0 px-3 text-sm">
+                      <Icon name="edit" className="size-4" /> Edit
+                    </Link>
                   </li>
                 ))}
               </ul>

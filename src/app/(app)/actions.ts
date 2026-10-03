@@ -478,6 +478,64 @@ export async function setSessionCharged(sessionId: string, charged: boolean) {
   refresh();
 }
 
+/** Edit a recorded visit: date, outcome, visit type, price and notes. */
+export async function updateSession(sessionId: string, _prev: FormState, form: FormData): Promise<FormState> {
+  const ctx = await getContext();
+  const { supabase } = ctx;
+  const today = todayIn(ctx.clinic.timezone);
+  const { data: s } = await supabase.from("sessions").select("*").eq("id", sessionId).single();
+  if (!s) return { error: "This visit no longer exists." };
+
+  const date = isoDate(form, "session_date");
+  const status = text(form, "status") as VisitOutcome;
+  const billing = text(form, "billing");
+  if (!date) return { error: "Pick the date." };
+  if (date > today) return { error: "The date can't be in the future." };
+  if (!STATUSES.includes(status)) return { error: "Pick what happened." };
+
+  if (date !== s.session_date) {
+    const { data: clash } = await supabase.from("sessions").select("id").eq("patient_id", s.patient_id).eq("session_date", date).neq("id", sessionId).maybeSingle();
+    if (clash) return { error: "There's already a visit on that date. Edit or remove that one instead." };
+  }
+
+  let price = { package_id: null as string | null, charge: 0 };
+  if (status === "cancelled_clinic" || billing === "none") {
+    // no charge
+  } else if (billing === "package") {
+    if (s.package_id) {
+      price = { package_id: s.package_id, charge: 0 };
+    } else {
+      const visitTypeId = await visitTypeFrom(form);
+      const slot = (await packageSlots(ctx, s.patient_id))
+        .filter((p) => p.remaining > 0 && (p.visit_type_id === null || p.visit_type_id === visitTypeId))
+        .sort((a, b) => a.start_date.localeCompare(b.start_date))[0];
+      if (!slot) return { error: "No package sessions left for this visit type. Choose an amount instead." };
+      price = { package_id: slot.id, charge: 0 };
+    }
+  } else if (billing === "amount") {
+    const amount = money(form, "charge");
+    if (Number.isNaN(amount) || amount < 0) return { error: "Enter the amount charged." };
+    price = { package_id: null, charge: amount };
+  } else {
+    return { error: "Choose how this visit is paid for." };
+  }
+
+  const { error } = await supabase
+    .from("sessions")
+    .update({ session_date: date, status, visit_type_id: await visitTypeFrom(form), notes: text(form, "notes") || null, ...price })
+    .eq("id", sessionId);
+  if (error) return { error: dbError(error) };
+  backToPatient(s.patient_id, "visits", "Visit updated");
+}
+
+/** Remove a visit from its edit screen and go back to the patient's visits. */
+export async function removeVisit(sessionId: string, patientId: string) {
+  const { supabase } = await getContext();
+  const { error } = await supabase.from("sessions").delete().eq("id", sessionId);
+  if (error) throw new Error(error.message);
+  backToPatient(patientId, "visits", "Visit removed");
+}
+
 export async function deleteSession(sessionId: string) {
   const { supabase } = await getContext();
   const { error } = await supabase.from("sessions").delete().eq("id", sessionId);
@@ -490,12 +548,15 @@ export async function deleteSession(sessionId: string) {
  * that already have a visit are skipped. Visits are priced in date order, each
  * with the fee in force on its own day. Absences are recorded without a charge.
  */
+type Pricing = { mode: "auto" } | { mode: "fixed"; amount: number } | { mode: "none" };
+
 async function insertPastSessions(
   ctx: Ctx,
   patientId: string,
   attended: string[],
   missed: string[],
   visitTypeId: string | null,
+  pricing: Pricing = { mode: "auto" },
 ): Promise<{ added: number; skipped: number } | { error: string }> {
   const { supabase, clinic } = ctx;
   const all = [...attended.map((d) => [d, "attended"] as const), ...missed.map((d) => [d, "missed"] as const)].sort(([a], [b]) =>
@@ -511,7 +572,10 @@ async function insertPastSessions(
   const rows = [];
   for (const [date, status] of all) {
     if (taken.has(date)) continue;
-    const priced = priceVisit({ rates, slots, patientId, date, status, visitTypeId, chargeIt: false });
+    const priced =
+      pricing.mode === "auto"
+        ? priceVisit({ rates, slots, patientId, date, status, visitTypeId, chargeIt: false })
+        : { package_id: null, charge: pricing.mode === "fixed" && status === "attended" ? pricing.amount : 0 };
     if ("error" in priced) return priced;
     rows.push({ clinic_id: clinic.id, patient_id: patientId, session_date: date, status, visit_type_id: visitTypeId, ...priced });
   }
@@ -528,7 +592,16 @@ export async function addPastSessions(patientId: string, _prev: FormState, form:
   if ("error" in past) return past;
   if (past.attended.length + past.missed.length === 0) return { error: "Tap the dates on the calendar first." };
 
-  const result = await insertPastSessions(ctx, patientId, past.attended, past.missed, await visitTypeFrom(form));
+  const mode = text(form, "pricing");
+  let pricing: Pricing = { mode: "auto" };
+  if (mode === "none") pricing = { mode: "none" };
+  if (mode === "fixed") {
+    const amount = money(form, "fixed_amount");
+    if (!(amount > 0)) return { error: "Enter the amount per session, or choose another pricing option." };
+    pricing = { mode: "fixed", amount };
+  }
+
+  const result = await insertPastSessions(ctx, patientId, past.attended, past.missed, await visitTypeFrom(form), pricing);
   if ("error" in result) return result;
   const n = result.added;
   backToPatient(patientId, "visits", `${n} session${n === 1 ? "" : "s"} added${result.skipped ? ` (${result.skipped} already recorded)` : ""}`);

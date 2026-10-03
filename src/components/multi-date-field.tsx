@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { parseDateInput, toDisplay } from "@/lib/date-input";
+import { isoWeekday, WEEKDAYS } from "@/lib/schedule";
+import { DateField } from "./date-field";
 
 type Mark = "attended" | "missed";
 
@@ -17,8 +19,22 @@ const WEEK_HEADER = ["M", "T", "W", "T", "F", "S", "S"];
  * have a visit are shown and can't be picked again.
  * Submits `attended_dates` and `missed_dates` (ISO, repeated).
  */
-export function MultiDateField({ today, existing = {} }: { today: string; existing?: Record<string, string> }) {
+export function MultiDateField({
+  today,
+  existing = {},
+  scheduleDays = [],
+}: {
+  today: string;
+  existing?: Record<string, string>;
+  /** Weekdays the patient usually comes (pre-selected when filling a date range). */
+  scheduleDays?: number[];
+}) {
   const [marks, setMarks] = useState<Record<string, Mark>>({});
+  const [rangeFrom, setRangeFrom] = useState("");
+  const [rangeTo, setRangeTo] = useState(today);
+  const [rangeDays, setRangeDays] = useState<number[]>(scheduleDays.length ? scheduleDays : [1, 2, 3, 4, 5, 6]);
+  const [rangeMark, setRangeMark] = useState<Mark>("attended");
+  const [rangeNote, setRangeNote] = useState("");
   const [month, setMonth] = useState(today.slice(0, 7));
   const [typed, setTyped] = useState("");
   const [typedError, setTypedError] = useState("");
@@ -53,6 +69,22 @@ export function MultiDateField({ today, existing = {} }: { today: string; existi
     setTypedError("");
   }
 
+  /** Tick every chosen weekday between the two dates (skipping future and already-recorded days). */
+  function fillRange() {
+    if (!rangeFrom || !rangeTo) return setRangeNote("Pick both dates first.");
+    if (rangeFrom > rangeTo) return setRangeNote("The “from” date must be before the “to” date.");
+    if (rangeDays.length === 0) return setRangeNote("Pick at least one weekday.");
+    const picked: string[] = [];
+    for (let d = rangeFrom; d <= rangeTo && d <= today; d = shift(d, 1)) {
+      if (rangeDays.includes(isoWeekday(d)) && !existing[d]) picked.push(d);
+      if (picked.length > 400) break;
+    }
+    if (picked.length === 0) return setRangeNote("No new days in that range (they may already be recorded).");
+    setMarks((m) => ({ ...m, ...Object.fromEntries(picked.map((d) => [d, rangeMark])) }));
+    setMonth(picked.at(-1)!.slice(0, 7));
+    setRangeNote(`Ticked ${picked.length} day${picked.length === 1 ? "" : "s"} — check the calendar below and tap any day to change it.`);
+  }
+
   const first = `${month}-01`;
   const lead = (new Date(`${first}T00:00:00Z`).getUTCDay() + 6) % 7;
   const daysInMonth = new Date(Date.UTC(+month.slice(0, 4), +month.slice(5, 7), 0)).getUTCDate();
@@ -80,6 +112,55 @@ export function MultiDateField({ today, existing = {} }: { today: string; existi
         Tap a day: once = <span className="font-medium text-ok">✓ attended</span>, twice = <span className="font-medium text-bad">✗ missed</span>,
         three times = clear.
       </p>
+
+      <details className="rounded-2xl bg-surface-2 p-3" open={Object.keys(existing).length === 0}>
+        <summary className="cursor-pointer text-base font-medium">Fill a date range</summary>
+        <div className="mt-3 space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <DateField name="range_from" label="From" today={today} max={today} shortcuts={[]} onChange={setRangeFrom} />
+            <DateField name="range_to" label="To" today={today} defaultValue={today} max={today} shortcuts={["today"]} onChange={setRangeTo} />
+          </div>
+          <fieldset>
+            <legend className="mb-1.5 text-sm font-medium">On these days</legend>
+            <div className="grid grid-cols-7 gap-1">
+              {WEEKDAYS.map((w) => {
+                const on = rangeDays.includes(w.n);
+                return (
+                  <button
+                    key={w.n}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setRangeDays((d) => (on ? d.filter((x) => x !== w.n) : [...d, w.n]))}
+                    className={`min-h-10 rounded-xl border text-sm font-medium ${on ? "border-brand bg-brand text-brand-fg" : "border-border bg-surface text-muted"}`}
+                  >
+                    {w.short.slice(0, 2)}
+                  </button>
+                );
+              })}
+            </div>
+          </fieldset>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium">Mark them</span>
+            {(["attended", "missed"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                aria-pressed={rangeMark === m}
+                onClick={() => setRangeMark(m)}
+                className={`rounded-full border px-3.5 py-1.5 text-sm font-medium ${
+                  rangeMark === m ? (m === "attended" ? "border-ok bg-ok-soft text-ok" : "border-bad bg-bad-soft text-bad") : "border-border text-muted"
+                }`}
+              >
+                {m === "attended" ? "✓ Present" : "✗ Absent"}
+              </button>
+            ))}
+          </div>
+          <button type="button" onClick={fillRange} className="btn w-full text-base">
+            Tick these days on the calendar
+          </button>
+          {rangeNote && <p className="text-sm text-muted">{rangeNote}</p>}
+        </div>
+      </details>
 
       <div className="rounded-2xl border border-border p-3">
         <div className="mb-2 flex items-center justify-between">
