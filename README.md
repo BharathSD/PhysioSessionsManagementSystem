@@ -12,6 +12,7 @@ Track physiotherapy session packages, attendance and payments: a simple manageme
 - **Moving from paper/Excel**: "Existing patient" mode records the current package (with its real start date), sessions already used (no dates needed), every past payment with its date, and past visits tapped on a calendar.
 - **Date fields**: type a date (`02/10/2026`, `2/10`, `02102026`, `today`), pick it from a calendar, or tap a shortcut.
 - **Phone numbers**: country picker (clinic's country by default), stored in international format.
+- **Case history**: one case per problem — free-text initial assessment, pain assessments with a tap-to-mark body chart (each kept as history), measurements with progress charts, exercises/treatments/notes per session ("same as last time"), timeline, discharge summary.
 - **Installable PWA** for Android, iPhone and desktop from a single codebase.
 
 Stack: Next.js 16 (App Router, server actions), Tailwind CSS 4, Supabase (Postgres, Auth, row-level security).
@@ -43,10 +44,15 @@ clinics ──< clinic_members >── auth.users        (a solo physio = clinic
    ├──< visit_types        (In-clinic, Home visit, Online, Assessment, + your own)
    ├──< rates              (dated fees: clinic standard or per patient; no-show / cancellation fees)
    ├──< days_off ──< day_off_notices   (clinic closures and who's been told)
+   ├──< exercise_library   (the clinic's own exercises and treatments)
    └──< patients ──< packages       (10 sessions for ₹5,000; optionally one visit type)
                  ├──< schedules      (fixed days or flexible; valid_from → valid_until; per-day visit types)
                  ├──< appointments   (one-off bookings: scheduled_date, booked_on)
-                 ├──< sessions       (outcome, visit type, charge saved on the day, pain score)
+                 ├──< cases          (initial assessment → discharge summary; one per problem)
+                 │      ├──< pain_assessments  (body chart, scores, character, triggers, red flags, activities — each kept)
+                 │      └──< measurements      (range of movement, strength … over time)
+                 ├──< sessions       (outcome, visit type, charge saved on the day, pain score, case)
+                 │      └──< session_items     (exercises / treatments done, name + dosage as recorded)
                  ├──< charges        (extra charges and discounts)
                  ├──< payments       (amount, method, paid_on)
                  └──< days_off       (one patient's cancelled days / breaks)
@@ -99,6 +105,5 @@ Every table carries `clinic_id`, and RLS restricts each user to clinics they bel
 
 ## Roadmap
 
-- **Next**: patient case history (assessment → progress → discharge, exercises per session)
-- **Later**: session times, patient "passbook" link + UPI pay button, reports, offline mode
+- **Later**: session times, home exercise programme on WhatsApp, standard outcome questionnaires, patient "passbook" link + UPI pay button, reports, offline mode
 - **v2**: patient login, clinics with multiple physios and invites, automatic WhatsApp (Business API)

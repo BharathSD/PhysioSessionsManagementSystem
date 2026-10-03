@@ -25,6 +25,7 @@ import { deleteCharge, deletePackage, deletePayment, deleteSession, endPlan, mar
 
 const TABS = [
   { key: "overview", label: "Overview" },
+  { key: "history", label: "History" },
   { key: "visits", label: "Visits" },
   { key: "account", label: "Account" },
   { key: "schedule", label: "Schedule" },
@@ -65,6 +66,8 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
     { data: details },
     { data: allBookings },
     { data: offRows },
+    { data: caseRows },
+    { data: latestPain },
   ] =
     await Promise.all([
       getBilling(),
@@ -88,9 +91,26 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
       supabase.from("appointments").select("booked_on, scheduled_date, status, visit_type_id").eq("patient_id", id).order("booked_on", { ascending: false }),
       // This patient's days off and the clinic's closures.
       supabase.from("days_off").select("*").or(`patient_id.is.null,patient_id.eq.${id}`).order("from_date"),
+      supabase.from("cases").select("id, title, status, opened_on, closed_on, diagnosis").eq("patient_id", id).order("opened_on", { ascending: false }),
+      // Latest full pain assessment, for the red-flag warning.
+      supabase
+        .from("pain_assessments")
+        .select("assessed_on, red_flags, case_id")
+        .eq("patient_id", id)
+        .neq("kind", "session")
+        .order("assessed_on", { ascending: false })
+        .order("created_at", { ascending: false })
+        .limit(1),
     ]);
 
   const visits = (sessions ?? []) as Visit[];
+  const cases = (caseRows ?? []) as { id: string; title: string; status: "active" | "discharged"; opened_on: string; closed_on: string | null; diagnosis: string | null }[];
+  const redFlags = (latestPain?.[0]?.red_flags as string[] | undefined) ?? [];
+  const { data: itemRows } = visits.length
+    ? await supabase.from("session_items").select("session_id, name").in("session_id", visits.map((v) => v.id)).order("sort")
+    : { data: [] };
+  const doneIn = new Map<string, string[]>();
+  for (const it of itemRows ?? []) doneIn.set(it.session_id as string, [...(doneIn.get(it.session_id as string) ?? []), it.name as string]);
   const paid = (payments ?? []) as Payment[];
   const pkgs = (packages ?? []) as Package[];
   const plans = (schedules ?? []) as Plan[];
@@ -262,6 +282,16 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
         </a>
       )}
 
+      {redFlags.length > 0 && (
+        <div role="note" className="mb-3 flex items-start gap-3 rounded-2xl border border-bad/40 bg-bad-soft p-3 text-base">
+          <Icon name="alert" className="mt-0.5 size-5 shrink-0 text-bad" />
+          <div>
+            <p className="text-sm font-semibold text-bad">Red flags</p>
+            <p>{redFlags.join(" · ")}</p>
+          </div>
+        </div>
+      )}
+
       {/* Pinned precautions — on every tab, before anything else */}
       {details?.precautions && (
         <div role="note" className="mb-3 flex items-start gap-3 rounded-2xl border border-warn/40 bg-warn-soft p-3 text-base">
@@ -371,7 +401,12 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
               />
             </div>
             {todaySession.status === "attended" && (
-              <QuickPain sessionId={todaySession.id} score={todaySession.pain_score} editHref={`${base}/visits/${todaySession.id}`} />
+              <>
+                <QuickPain sessionId={todaySession.id} score={todaySession.pain_score} editHref={`${base}/visits/${todaySession.id}`} />
+                <Link href={`${base}/visits/${todaySession.id}/record`} className="btn w-full text-base">
+                  <Icon name="edit" /> {doneIn.has(todaySession.id) || todaySession.notes ? "Edit exercises & notes" : "Add exercises & notes"}
+                </Link>
+              </>
             )}
             <div className="flex gap-2">
               {p.phone && (
@@ -467,7 +502,44 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
             summaryLink={p.phone ? whatsappLink(p.phone, statement(p, visits, sender, typeName)) : null}
             base={base}
             daysOff={daysOff}
+            activeCases={cases.filter((cs) => cs.status === "active")}
           />
+        )}
+
+        {tab === "history" && (
+          <>
+            <Link href={`${base}/cases/new`} className="btn btn-primary mt-4 w-full text-base">
+              <Icon name="plus" /> New case
+            </Link>
+            <SectionTitle aside={cases.length ? `${cases.length} case${cases.length === 1 ? "" : "s"}` : undefined}>Cases</SectionTitle>
+            {cases.length === 0 ? (
+              <p className="card text-base text-muted">
+                No case history yet. Open a case to record the initial assessment, pain, what&apos;s done each session and the outcome.
+              </p>
+            ) : (
+              <ul className="space-y-2.5">
+                {[...cases]
+                  .sort((a, b) => Number(a.status === "discharged") - Number(b.status === "discharged"))
+                  .map((cs) => (
+                    <li key={cs.id}>
+                      <Link href={`${base}/cases/${cs.id}`} className="card flex items-center gap-3">
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-lg font-semibold">{cs.title}</span>
+                          <span className="block text-sm text-muted">
+                            <span className={`chip mr-1.5 ${cs.status === "active" ? "bg-ok-soft text-ok" : "bg-surface-2 text-muted"}`}>
+                              {cs.status === "active" ? "Active" : "Discharged"}
+                            </span>
+                            {formatDate(cs.opened_on)} – {cs.closed_on ? formatDate(cs.closed_on) : "now"}
+                          </span>
+                          {cs.diagnosis && <span className="mt-1 block truncate text-sm">{cs.diagnosis}</span>}
+                        </span>
+                        <Icon name="chevron" className="size-5 shrink-0 text-muted" />
+                      </Link>
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </>
         )}
 
         {tab === "visits" && (
@@ -506,6 +578,12 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
                         })}
                       />
                       {v.pain_score !== null && <span className="block text-sm text-muted">Pain {v.pain_score}/10</span>}
+                      {doneIn.has(v.id) && <span className="block text-sm">{doneIn.get(v.id)!.join(" · ")}</span>}
+                      {v.status === "attended" && (
+                        <Link href={`${base}/visits/${v.id}/record`} className="block text-sm font-medium text-brand">
+                          {doneIn.has(v.id) || v.notes ? "Session record" : "+ Exercises & notes"}
+                        </Link>
+                      )}
                       {v.appointments && <span className="block text-sm text-muted">Booked on {formatDate(v.appointments.booked_on)}</span>}
                       {v.notes && <span className="block text-sm text-muted">{v.notes}</span>}
                     </span>

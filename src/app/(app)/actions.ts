@@ -168,7 +168,7 @@ function dbError(error: { message: string }): string {
   return error.message;
 }
 
-type PatientTab = "overview" | "visits" | "account" | "schedule";
+type PatientTab = "overview" | "history" | "visits" | "account" | "schedule";
 
 /** Back to the patient's page (on a tab) with a "✓ …" confirmation banner. */
 function backToPatient(patientId: string, tab: PatientTab, message: string): never {
@@ -416,6 +416,20 @@ export async function setArchived(patientId: string, archived: boolean) {
 // fee in force on the visit's date, and stored on the visit.
 // ---------------------------------------------------------------------------
 
+/** The patient's most recent active case that had opened by this date (visits are filed under it). */
+async function activeCaseFor({ supabase }: Ctx, patientId: string, date: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("cases")
+    .select("id")
+    .eq("patient_id", patientId)
+    .eq("status", "active")
+    .lte("opened_on", date)
+    .order("opened_on", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.id ?? null;
+}
+
 type VisitInput = {
   date: string;
   status: VisitOutcome;
@@ -443,6 +457,7 @@ async function recordVisit(ctx: Ctx, patientId: string, v: VisitInput): Promise<
   if (existing) return { error: "This day is already marked. Undo it first to change it." };
 
   const visitTypeId = v.visitTypeId ?? booking?.visit_type_id ?? null;
+  const caseId = await activeCaseFor(ctx, patientId, v.date);
   const priced = priceVisit({ rates, slots, patientId, date: v.date, status: v.status, visitTypeId, chargeIt: v.chargeIt });
   if ("error" in priced) return priced;
 
@@ -455,6 +470,7 @@ async function recordVisit(ctx: Ctx, patientId: string, v: VisitInput): Promise<
       session_date: v.date,
       status: v.status,
       visit_type_id: visitTypeId,
+      case_id: caseId,
       notes: v.notes,
       pain_score: v.status === "attended" ? (v.pain ?? null) : null,
       ...priced,
@@ -664,7 +680,15 @@ async function insertPastSessions(
         ? priceVisit({ rates, slots, patientId, date, status, visitTypeId, chargeIt: false })
         : { package_id: null, charge: pricing.mode === "fixed" && status === "attended" ? pricing.amount : 0 };
     if ("error" in priced) return priced;
-    rows.push({ clinic_id: clinic.id, patient_id: patientId, session_date: date, status, visit_type_id: visitTypeId, ...priced });
+    rows.push({
+      clinic_id: clinic.id,
+      patient_id: patientId,
+      session_date: date,
+      status,
+      visit_type_id: visitTypeId,
+      case_id: await activeCaseFor(ctx, patientId, date),
+      ...priced,
+    });
   }
   if (rows.length > 0) {
     const { error } = await supabase.from("sessions").insert(rows);
@@ -1024,6 +1048,277 @@ export async function restorePatientDay(dayOffId: string, patientId: string) {
   const { error } = await supabase.from("days_off").delete().eq("id", dayOffId).eq("patient_id", patientId);
   if (error) throw new Error(error.message);
   backToPatient(patientId, "overview", "Day restored");
+}
+
+// ---------------------------------------------------------------------------
+// Case history
+// ---------------------------------------------------------------------------
+
+const CASE_TEXT = ["chief_complaint", "history", "medical_history", "findings", "diagnosis", "goals", "plan"] as const;
+
+function caseTextFrom(form: FormData) {
+  return Object.fromEntries(CASE_TEXT.map((k) => [k, text(form, k) || null])) as Record<(typeof CASE_TEXT)[number], string | null>;
+}
+
+/** Open a case with its initial assessment. Earlier visits since the opening date are filed under it. */
+export async function openCase(patientId: string, _prev: FormState, form: FormData): Promise<FormState> {
+  const { supabase, clinic } = await getContext();
+  const today = todayIn(clinic.timezone);
+  const title = text(form, "title");
+  const openedOn = isoDate(form, "opened_on") ?? today;
+  if (!title) return { error: "Give the case a short title, e.g. “Right knee — ACL reconstruction”." };
+  if (openedOn > today) return { error: "The case can't start in the future." };
+
+  const { data, error } = await supabase
+    .from("cases")
+    .insert({ clinic_id: clinic.id, patient_id: patientId, title, opened_on: openedOn, ...caseTextFrom(form) })
+    .select("id")
+    .single();
+  if (error) return { error: dbError(error) };
+  await supabase.from("sessions").update({ case_id: data.id }).eq("patient_id", patientId).is("case_id", null).gte("session_date", openedOn);
+
+  refresh();
+  const next = text(form, "then") === "pain" ? `/patients/${patientId}/pain/new?case=${data.id}&kind=initial` : `/patients/${patientId}/cases/${data.id}`;
+  redirect(`${next}${next.includes("?") ? "&" : "?"}${new URLSearchParams({ done: "Case opened" })}`);
+}
+
+export async function updateCase(caseId: string, patientId: string, _prev: FormState, form: FormData): Promise<FormState> {
+  const { supabase } = await getContext();
+  const title = text(form, "title");
+  if (!title) return { error: "The case needs a title." };
+  const openedOn = isoDate(form, "opened_on");
+  const { error } = await supabase
+    .from("cases")
+    .update({ title, ...(openedOn ? { opened_on: openedOn } : {}), ...caseTextFrom(form) })
+    .eq("id", caseId);
+  if (error) return { error: dbError(error) };
+  refresh();
+  redirect(`/patients/${patientId}/cases/${caseId}?${new URLSearchParams({ done: "Assessment saved" })}`);
+}
+
+export async function dischargeCase(caseId: string, patientId: string, _prev: FormState, form: FormData): Promise<FormState> {
+  const { supabase, clinic } = await getContext();
+  const closedOn = isoDate(form, "closed_on") ?? todayIn(clinic.timezone);
+  const { data: c } = await supabase.from("cases").select("opened_on").eq("id", caseId).single();
+  if (c && closedOn < c.opened_on) return { error: "Discharge can't be before the case opened." };
+  const { error } = await supabase
+    .from("cases")
+    .update({ status: "discharged", closed_on: closedOn, discharge_summary: text(form, "discharge_summary") || null })
+    .eq("id", caseId);
+  if (error) return { error: dbError(error) };
+  refresh();
+  redirect(`/patients/${patientId}/cases/${caseId}?${new URLSearchParams({ done: "Patient discharged" })}`);
+}
+
+export async function reopenCase(caseId: string, patientId: string) {
+  const { supabase } = await getContext();
+  const { error } = await supabase.from("cases").update({ status: "active", closed_on: null }).eq("id", caseId);
+  if (error) throw new Error(error.message);
+  refresh();
+  redirect(`/patients/${patientId}/cases/${caseId}?${new URLSearchParams({ done: "Case reopened" })}`);
+}
+
+const PAIN_LISTS = ["locations", "radiating", "character", "worse_times", "aggravating", "easing", "nerve_symptoms", "red_flags"] as const;
+const PAIN_SCORES = ["at_rest", "on_activity", "at_night", "worst_24h", "best_24h", "before_session", "after_session"] as const;
+
+/** Reads a pain assessment form. Returns null if nothing at all was recorded. */
+function painAssessmentFrom(form: FormData) {
+  const scores: Record<string, number | null> = {};
+  for (const k of PAIN_SCORES) {
+    const raw = text(form, k);
+    const n = raw === "" ? null : Number(raw);
+    if (n !== null && !(Number.isInteger(n) && n >= 0 && n <= 10)) return { error: "Pain scores must be between 0 and 10." };
+    scores[k] = n;
+  }
+  const lists = Object.fromEntries(PAIN_LISTS.map((k) => [k, [...new Set(form.getAll(k).map(String).filter(Boolean))]])) as Record<
+    (typeof PAIN_LISTS)[number],
+    string[]
+  >;
+  const names = form.getAll("activity_name").map(String);
+  const values = form.getAll("activity_score").map(String);
+  const activities = names
+    .map((name, i) => ({ name: name.trim(), score: values[i] === "" ? NaN : Number(values[i]) }))
+    .filter((a) => a.name && Number.isInteger(a.score) && a.score >= 0 && a.score <= 10);
+  const stiffness = text(form, "morning_stiffness_min") ? int(form, "morning_stiffness_min") : null;
+  const pattern = text(form, "pattern");
+  const onset = text(form, "onset");
+  const fields = {
+    ...scores,
+    ...lists,
+    activities,
+    morning_stiffness_min: stiffness !== null && stiffness >= 0 ? stiffness : null,
+    pattern: pattern === "constant" || pattern === "intermittent" ? pattern : null,
+    onset: onset === "sudden" || onset === "gradual" ? onset : null,
+    notes: text(form, "pain_notes") || null,
+  };
+  const empty =
+    Object.values(scores).every((v) => v === null) &&
+    Object.values(lists).every((v) => v.length === 0) &&
+    activities.length === 0 &&
+    !fields.pattern &&
+    !fields.onset &&
+    fields.morning_stiffness_min === null &&
+    !fields.notes;
+  return empty ? null : fields;
+}
+
+/** A full pain assessment (initial, reassessment or at discharge). Each one is kept as history. */
+export async function savePainAssessment(patientId: string, _prev: FormState, form: FormData): Promise<FormState> {
+  const { supabase, clinic } = await getContext();
+  const today = todayIn(clinic.timezone);
+  const assessed = isoDate(form, "assessed_on") ?? today;
+  if (assessed > today) return { error: "The assessment date can't be in the future." };
+  const kind = text(form, "kind");
+  if (!["initial", "reassessment", "discharge", "session"].includes(kind)) return { error: "Unknown assessment type." };
+  const fields = painAssessmentFrom(form);
+  if (fields && "error" in fields) return fields;
+  if (!fields) return { error: "Nothing recorded yet — add at least a score, a location or a note." };
+  const caseId = text(form, "case_id") || null;
+
+  const { error } = await supabase
+    .from("pain_assessments")
+    .insert({ clinic_id: clinic.id, patient_id: patientId, case_id: caseId, assessed_on: assessed, kind, ...fields });
+  if (error) return { error: dbError(error) };
+  refresh();
+  redirect(
+    caseId
+      ? `/patients/${patientId}/cases/${caseId}?${new URLSearchParams({ done: "Pain assessment saved" })}`
+      : `/patients/${patientId}?${new URLSearchParams({ tab: "history", done: "Pain assessment saved" })}`,
+  );
+}
+
+export async function deletePainAssessment(id: string) {
+  const { supabase } = await getContext();
+  const { error } = await supabase.from("pain_assessments").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  refresh();
+}
+
+export async function addMeasurement(patientId: string, caseId: string, _prev: FormState, form: FormData): Promise<FormState> {
+  const { supabase, clinic } = await getContext();
+  const today = todayIn(clinic.timezone);
+  const name = text(form, "name");
+  const value = Number(text(form, "value").replace(",", "."));
+  const on = isoDate(form, "measured_on") ?? today;
+  if (!name) return { error: "What was measured? e.g. “Knee flexion (R)”." };
+  if (text(form, "value") === "" || Number.isNaN(value)) return { error: "Enter the measured value as a number." };
+  if (on > today) return { error: "The date can't be in the future." };
+  const { error } = await supabase.from("measurements").insert({
+    clinic_id: clinic.id,
+    patient_id: patientId,
+    case_id: caseId,
+    measured_on: on,
+    name,
+    value,
+    unit: text(form, "unit") || null,
+    notes: text(form, "notes") || null,
+  });
+  if (error) return { error: dbError(error) };
+  refresh();
+  return { ok: `${name} saved` };
+}
+
+export async function deleteMeasurement(id: string) {
+  const { supabase } = await getContext();
+  const { error } = await supabase.from("measurements").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  refresh();
+}
+
+/**
+ * What was done in a session: exercises and treatments (copied by name and
+ * dosage), notes, the case it belongs to, and an optional quick pain check.
+ * New names are added to the clinic's list automatically.
+ */
+export async function saveSessionRecord(sessionId: string, _prev: FormState, form: FormData): Promise<FormState> {
+  const { supabase, clinic } = await getContext();
+  const { data: s } = await supabase.from("sessions").select("id, patient_id, session_date").eq("id", sessionId).single();
+  if (!s) return { error: "This visit no longer exists." };
+
+  const kinds = form.getAll("item_kind").map(String);
+  const names = form.getAll("item_name").map((v) => String(v).trim());
+  const dosages = form.getAll("item_dosage").map((v) => String(v).trim());
+  const items = names
+    .map((name, i) => ({ name, kind: kinds[i] === "treatment" ? "treatment" : "exercise", dosage: dosages[i] || null }))
+    .filter((it) => it.name);
+
+  // Make sure every item is on the clinic's list (new names are added).
+  const { data: library } = await supabase.from("exercise_library").select("id, kind, name");
+  const known = new Map((library ?? []).map((l) => [`${l.kind}:${l.name.toLowerCase()}`, l.id as string]));
+  const missing = [...new Map(items.filter((it) => !known.has(`${it.kind}:${it.name.toLowerCase()}`)).map((it) => [`${it.kind}:${it.name.toLowerCase()}`, it])).values()];
+  if (missing.length > 0) {
+    const { data: added, error } = await supabase
+      .from("exercise_library")
+      .insert(missing.map((it) => ({ clinic_id: clinic.id, kind: it.kind, name: it.name, dosage: it.dosage })))
+      .select("id, kind, name");
+    if (error) return { error: dbError(error) };
+    for (const l of added ?? []) known.set(`${l.kind}:${l.name.toLowerCase()}`, l.id);
+  }
+
+  const pain = painAssessmentFrom(form);
+  if (pain && "error" in pain) return pain;
+
+  const caseId = text(form, "case_id") || null;
+  const { error: sessionError } = await supabase.from("sessions").update({ notes: text(form, "notes") || null, case_id: caseId }).eq("id", sessionId);
+  if (sessionError) return { error: dbError(sessionError) };
+
+  await supabase.from("session_items").delete().eq("session_id", sessionId);
+  if (items.length > 0) {
+    const { error } = await supabase.from("session_items").insert(
+      items.map((it, i) => ({
+        clinic_id: clinic.id,
+        session_id: sessionId,
+        item_id: known.get(`${it.kind}:${it.name.toLowerCase()}`) ?? null,
+        kind: it.kind,
+        name: it.name,
+        dosage: it.dosage,
+        sort: i,
+      })),
+    );
+    if (error) return { error: dbError(error) };
+  }
+
+  if (pain) {
+    const { error } = await supabase.from("pain_assessments").insert({
+      clinic_id: clinic.id,
+      patient_id: s.patient_id,
+      case_id: caseId,
+      session_id: sessionId,
+      assessed_on: s.session_date,
+      kind: "session",
+      ...pain,
+    });
+    if (error) return { error: dbError(error) };
+  }
+  backToPatient(s.patient_id, "visits", "Session record saved");
+}
+
+export async function addLibraryItem(_prev: FormState, form: FormData): Promise<FormState> {
+  const { supabase, clinic } = await getContext();
+  const kind = text(form, "kind") === "treatment" ? "treatment" : "exercise";
+  const name = text(form, "name");
+  if (!name) return { error: "Enter a name." };
+  const { error } = await supabase.from("exercise_library").insert({ clinic_id: clinic.id, kind, name, dosage: text(form, "dosage") || null });
+  if (error) return { error: error.code === "23505" ? "That's already on your list." : dbError(error) };
+  refresh();
+  return { ok: `${name} added` };
+}
+
+export async function updateLibraryItem(id: string, _prev: FormState, form: FormData): Promise<FormState> {
+  const { supabase } = await getContext();
+  const name = text(form, "name");
+  if (!name) return { error: "Name can't be empty." };
+  const { error } = await supabase.from("exercise_library").update({ name, dosage: text(form, "dosage") || null }).eq("id", id);
+  if (error) return { error: error.code === "23505" ? "That name is already on your list." : dbError(error) };
+  refresh();
+  return { ok: "Saved" };
+}
+
+export async function setLibraryItemArchived(id: string, archived: boolean) {
+  const { supabase } = await getContext();
+  const { error } = await supabase.from("exercise_library").update({ archived }).eq("id", id);
+  if (error) throw new Error(error.message);
+  refresh();
 }
 
 // ---------------------------------------------------------------------------

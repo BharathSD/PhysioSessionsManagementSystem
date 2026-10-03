@@ -82,6 +82,32 @@ describe("constraints reject bad data", () => {
     await rejects("insert into schedules (clinic_id, patient_id, mode, weekdays, valid_from) values ($1, $2, 'fixed_days', '{8}', '2026-01-01')", [clinicId, p]);
   });
 
+  it("on cases, pain assessments and session records", async () => {
+    const [{ id: p }] = await as<{ id: string }>("insert into patients (clinic_id, name) values ($1, 'Case test') returning id", [clinicId]);
+    // a discharged case needs a discharge date, and it can't be before the case opened
+    await rejects("insert into cases (clinic_id, patient_id, title, opened_on, status) values ($1, $2, 'x', '2026-09-01', 'discharged')", [clinicId, p]);
+    await rejects("insert into cases (clinic_id, patient_id, title, opened_on, status, closed_on) values ($1, $2, 'x', '2026-09-01', 'discharged', '2026-08-01')", [
+      clinicId,
+      p,
+    ]);
+    await rejects("insert into pain_assessments (clinic_id, patient_id, assessed_on, kind, at_rest) values ($1, $2, '2026-09-01', 'initial', 11)", [clinicId, p]);
+    await rejects("insert into pain_assessments (clinic_id, patient_id, assessed_on, kind) values ($1, $2, '2026-09-01', 'whenever')", [clinicId, p]);
+    await rejects("insert into exercise_library (clinic_id, kind, name) values ($1, 'stretch', 'x')", [clinicId]);
+  });
+
+  it("keeps what was done in a session when the exercise is renamed or removed", async () => {
+    const [{ id: p }] = await as<{ id: string }>("insert into patients (clinic_id, name) values ($1, 'Items') returning id", [clinicId]);
+    const [{ id: s }] = await as<{ id: string }>(
+      "insert into sessions (clinic_id, patient_id, session_date, status) values ($1, $2, '2026-09-02', 'attended') returning id",
+      [clinicId, p],
+    );
+    const [{ id: ex }] = await as<{ id: string }>("insert into exercise_library (clinic_id, kind, name) values ($1, 'exercise', 'Bridges') returning id", [clinicId]);
+    await as("insert into session_items (clinic_id, session_id, item_id, kind, name, dosage) values ($1, $2, $3, 'exercise', 'Bridges', '2 × 15')", [clinicId, s, ex]);
+    await as("update exercise_library set name = 'Glute bridges' where id = $1", [ex]);
+    await as("delete from exercise_library where id = $1", [ex]);
+    expect(await as("select name, dosage, item_id from session_items where session_id = $1", [s])).toEqual([{ name: "Bridges", dosage: "2 × 15", item_id: null }]);
+  });
+
   it("on days off", async () => {
     await rejects("insert into days_off (clinic_id, from_date, to_date, cancelled_by) values ($1, '2026-10-10', '2026-10-09', 'clinic')", [clinicId]);
     await rejects("insert into days_off (clinic_id, from_date, to_date, cancelled_by) values ($1, '2026-10-10', '2026-10-10', 'patient')", [clinicId]);

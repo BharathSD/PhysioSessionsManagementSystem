@@ -66,6 +66,7 @@ export function Overview(props: {
   typeName: (id: string | null | undefined) => string;
   summaryLink: string | null;
   daysOff: DayOff[];
+  activeCases: { id: string; title: string; opened_on: string }[];
   base: string;
 }) {
   const { p, details, visits, today, typeName, base } = props;
@@ -346,8 +347,18 @@ export function Overview(props: {
       </div>
 
       {/* Treatment */}
-      <SectionTitle>Treatment</SectionTitle>
+      <SectionTitle aside={<Link href={`${base}?tab=history`} className="text-brand normal-case">History</Link>}>Treatment</SectionTitle>
       <div className="card space-y-3">
+        {props.activeCases.length > 0 && (
+          <div className="flex flex-wrap gap-2 border-b border-border pb-3">
+            {props.activeCases.map((c) => (
+              <Link key={c.id} href={`${base}/cases/${c.id}`} className="flex items-center gap-1.5 rounded-xl bg-brand-soft px-3 py-2 text-sm font-medium text-brand">
+                {c.title}
+                <Icon name="chevron" className="size-4" />
+              </Link>
+            ))}
+          </div>
+        )}
         <div className="grid grid-cols-3 gap-3 text-center">
           <div>
             <p className="text-lg font-semibold">{started ? formatDay(started).replace(/^\w+, /, "") : "—"}</p>

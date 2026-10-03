@@ -224,6 +224,9 @@ function PatientRow({ row, rc }: { row: BoardRow; rc: RowContext }) {
           {session.status === "attended" && (
             <div className="mt-3">
               <QuickPain sessionId={session.id} score={session.pain_score} editHref={`/patients/${p.id}/visits/${session.id}`} />
+              <Link href={`/patients/${p.id}/visits/${session.id}/record`} className="mt-2 inline-block text-sm font-medium text-brand">
+                + Exercises &amp; notes
+              </Link>
             </div>
           )}
           <div className="mt-3 flex gap-2">

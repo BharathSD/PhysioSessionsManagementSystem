@@ -71,3 +71,19 @@ describe("cancellation messages", () => {
     expect(cancellationNotice("Rahul", ranges, "patient", "2026-10-10", null, sender)).toContain("Make-up session booked: Sat, 10 Oct");
   });
 });
+
+import { niceScale } from "@/components/pain-chart";
+
+describe("chart scales", () => {
+  it.each([
+    [[60, 85, 110], [40, 120]],
+    [[3, 4], [2, 6]],
+    [[100, 100], [75, 125]],
+    [[1.5, 2.25], [1.4, 2.6]],
+  ])("%j → %j", (values, scale) => {
+    const [lo, hi] = niceScale(values);
+    expect([lo, hi]).toEqual(scale);
+    expect(lo).toBeLessThanOrEqual(Math.min(...values));
+    expect(hi).toBeGreaterThanOrEqual(Math.max(...values));
+  });
+});

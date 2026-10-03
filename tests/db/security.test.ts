@@ -23,6 +23,11 @@ const TABLES = [
   "charges",
   "days_off",
   "day_off_notices",
+  "cases",
+  "pain_assessments",
+  "measurements",
+  "exercise_library",
+  "session_items",
   "patient_summary",
 ];
 
@@ -33,7 +38,30 @@ beforeAll(async () => {
   // Give clinic A one row in every table.
   [{ id: patientA }] = await a.as<{ id: string }>("insert into patients (clinic_id, name, phone) values ($1, 'Rahul', '+919876543210') returning id", [a.clinicId]);
   const [{ id: pkg }] = await a.as<{ id: string }>("insert into packages (clinic_id, patient_id, total_sessions, price) values ($1, $2, 10, 5000) returning id", [a.clinicId, patientA]);
-  await a.as("insert into sessions (clinic_id, patient_id, session_date, status, package_id) values ($1, $2, '2026-10-01', 'attended', $3)", [a.clinicId, patientA, pkg]);
+  const [{ id: caseA }] = await a.as<{ id: string }>(
+    "insert into cases (clinic_id, patient_id, title, opened_on) values ($1, $2, 'Right knee', '2026-09-01') returning id",
+    [a.clinicId, patientA],
+  );
+  const [{ id: sessionA }] = await a.as<{ id: string }>(
+    "insert into sessions (clinic_id, patient_id, session_date, status, package_id, case_id) values ($1, $2, '2026-10-01', 'attended', $3, $4) returning id",
+    [a.clinicId, patientA, pkg, caseA],
+  );
+  await a.as("insert into pain_assessments (clinic_id, patient_id, case_id, assessed_on, kind, at_rest) values ($1, $2, $3, '2026-09-01', 'initial', 6)", [
+    a.clinicId,
+    patientA,
+    caseA,
+  ]);
+  await a.as("insert into measurements (clinic_id, patient_id, case_id, measured_on, name, value, unit) values ($1, $2, $3, '2026-09-01', 'Knee flexion', 60, '°')", [
+    a.clinicId,
+    patientA,
+    caseA,
+  ]);
+  const [{ id: ex }] = await a.as<{ id: string }>("insert into exercise_library (clinic_id, kind, name) values ($1, 'exercise', 'Straight leg raise') returning id", [a.clinicId]);
+  await a.as("insert into session_items (clinic_id, session_id, item_id, kind, name, dosage) values ($1, $2, $3, 'exercise', 'Straight leg raise', '3 × 10')", [
+    a.clinicId,
+    sessionA,
+    ex,
+  ]);
   await a.as("insert into payments (clinic_id, patient_id, amount) values ($1, $2, 1000)", [a.clinicId, patientA]);
   await a.as("insert into schedules (clinic_id, patient_id, mode, weekdays, valid_from) values ($1, $2, 'fixed_days', '{1,3,5}', '2026-10-01')", [a.clinicId, patientA]);
   await a.as("insert into appointments (clinic_id, patient_id, scheduled_date) values ($1, $2, '2026-10-10')", [a.clinicId, patientA]);
