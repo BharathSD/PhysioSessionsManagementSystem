@@ -12,7 +12,7 @@ export default defineConfig({
   workers: 1, // tests share one app server; each file uses its own test account
   retries: process.env.CI ? 1 : 0,
   timeout: 60_000,
-  expect: { timeout: 10_000 },
+  expect: { timeout: 20_000 }, // allow for a slow round trip to Supabase
   reporter: [["list"], ["html", { open: "never", outputFolder: "playwright-report" }]],
   use: {
     baseURL,
