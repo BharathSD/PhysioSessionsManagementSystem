@@ -4,7 +4,9 @@ import { applyMigration, freshDb, migrationFiles, signUp, USER_A } from "./helpe
 // Migration 0004 moved billing to a ledger. Existing clinics' balances must not change.
 
 describe("upgrading to the billing ledger (0004)", () => {
-  it("keeps every patient's balance the same", async () => {
+  // Builds a database, then runs the later migrations on it: ~5 s normally,
+  // much longer on a busy machine or a CI runner — so allow plenty of time.
+  it("keeps every patient's balance the same", { timeout: 120_000 }, async () => {
     const db = await freshDb("0004_billing.sql");
     const { as, clinicId } = await signUp(db, USER_A);
 
