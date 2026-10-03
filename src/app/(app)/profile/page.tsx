@@ -1,9 +1,11 @@
 import { ActionForm } from "@/components/action-form";
+import { DesignationPicker } from "@/components/designation-picker";
 import { Icon } from "@/components/icons";
 import { PhoneField } from "@/components/phone-field";
 import { SubmitButton } from "@/components/submit-button";
 import { LinkRow, SectionTitle, initials } from "@/components/ui";
 import { getContext } from "@/lib/context";
+import { physioName } from "@/lib/names";
 import { countryOptions } from "@/lib/phone";
 import { signOut } from "../../login/actions";
 import { updateSettings } from "../actions";
@@ -22,7 +24,7 @@ export default async function ProfilePage() {
           {initials(member.display_name)}
         </span>
         <div className="min-w-0">
-          <h1 className="truncate text-[1.65rem] leading-tight font-semibold">{member.display_name}</h1>
+          <h1 className="truncate text-[1.65rem] leading-tight font-semibold">{physioName(member)}</h1>
           <p className="truncate text-base text-muted">{email}</p>
           <p className="truncate text-sm text-muted">{clinic.name}</p>
         </div>
@@ -51,9 +53,10 @@ export default async function ProfilePage() {
       <ActionForm action={updateSettings} submitLabel="Save changes" className="space-y-1">
         <SectionTitle>Your details</SectionTitle>
         <div className="card space-y-4">
+          <DesignationPicker defaultValue={member.designation} />
           <label className="field">
             <span>
-              Your name <em>(shown at the end of WhatsApp receipts)</em>
+              Your name <em>(receipts end with “– {physioName(member)}”)</em>
             </span>
             <input name="display_name" required defaultValue={member.display_name} />
           </label>

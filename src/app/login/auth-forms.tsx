@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { useFormAction } from "@/lib/use-form-action";
+import { DesignationPicker } from "@/components/designation-picker";
 import { PasswordInput } from "@/components/password-input";
 import { SubmitButton } from "@/components/submit-button";
 import { signIn, signUp } from "./actions";
@@ -31,9 +32,10 @@ export function AuthForms() {
       <form onSubmit={mode === "signin" ? signInSubmit : signUpSubmit} className="space-y-4">
         {mode === "signup" && (
           <>
+            <DesignationPicker />
             <label className="field">
               <span>Your name</span>
-              <input name="full_name" required autoComplete="name" placeholder="Dr. Priya Sharma" />
+              <input name="full_name" required autoComplete="name" placeholder="Priya Sharma" />
             </label>
             <label className="field">
               <span>Clinic / practice name <em>(optional)</em></span>

@@ -16,7 +16,7 @@ export const getContext = cache(async () => {
 
   const { data: member } = await supabase
     .from("clinic_members")
-    .select("clinic_id, user_id, role, display_name, clinics(*)")
+    .select("clinic_id, user_id, role, display_name, designation, clinics(*)")
     .eq("user_id", userId)
     .order("created_at")
     .limit(1)

@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
-import { freshDb, migrationFiles, signUp, USER_A } from "./helpers";
+import { applyMigration, freshDb, migrationFiles, signUp, USER_A, USER_B } from "./helpers";
 
 let db: PGlite;
 let as: Awaited<ReturnType<typeof signUp>>["as"];
@@ -19,9 +19,44 @@ describe("migrations", () => {
 
   it("give a new physio their own clinic with the standard visit types", async () => {
     expect(await as("select name from clinics")).toEqual([{ name: "Priya Physio" }]);
-    expect(await as("select role, display_name from clinic_members")).toEqual([{ role: "owner", display_name: "Dr. Priya" }]);
+    // "Dr." typed into the name is stored as the designation.
+    expect(await as("select role, designation, display_name from clinic_members")).toEqual([{ role: "owner", designation: "Dr.", display_name: "Priya" }]);
     const types = await as<{ name: string }>("select name from visit_types order by sort");
     expect(types.map((t) => t.name)).toEqual(["In-clinic session", "Home visit", "Online session", "Assessment"]);
+  });
+});
+
+describe("designation", () => {
+  it("is taken from the sign-up form, and an unknown one is dropped", async () => {
+    const db2 = await freshDb();
+    const a = await signUp(db2, USER_A, { full_name: "Anil Kumar", designation: "Prof." });
+    expect(await a.as("select designation, display_name from clinic_members")).toEqual([{ designation: "Prof.", display_name: "Anil Kumar" }]);
+    const b = await signUp(db2, USER_B, { full_name: "Meera", designation: "Sir" });
+    expect(await b.as("select designation, display_name from clinic_members")).toEqual([{ designation: "", display_name: "Meera" }]);
+  });
+
+  it("is split out of names saved before it existed", { timeout: 120_000 }, async () => {
+    const old = await freshDb("0008_designation.sql");
+    const a = await signUp(old, USER_A, { full_name: "dr priya sharma" });
+    const b = await signUp(old, USER_B, { full_name: "Drishti Rao" });
+    await applyMigration(old, "0008_designation.sql");
+    expect(await a.as("select designation, display_name from clinic_members")).toEqual([{ designation: "Dr.", display_name: "priya sharma" }]);
+    expect(await b.as("select designation, display_name from clinic_members")).toEqual([{ designation: "", display_name: "Drishti Rao" }]);
+  });
+});
+
+describe("patient title", () => {
+  it("is split out of names saved before it existed and shows in the summary", { timeout: 120_000 }, async () => {
+    const old = await freshDb("0009_patient_title.sql");
+    const a = await signUp(old, USER_A);
+    await a.as("insert into patients (clinic_id, name) values ($1, 'mrs lakshmi iyer'), ($1, 'Master Arjun'), ($1, 'Mrinal')", [a.clinicId]);
+    await applyMigration(old, "0009_patient_title.sql");
+    expect(await a.as("select title, name from patient_summary order by name")).toEqual([
+      { title: "", name: "Master Arjun" }, // "Master" can be a real first name: left for the physio to set
+      { title: "", name: "Mrinal" },
+      { title: "Mrs.", name: "lakshmi iyer" },
+    ]);
+    await expect(a.as("update patients set title = 'Sir'")).rejects.toThrow();
   });
 });
 

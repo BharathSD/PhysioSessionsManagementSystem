@@ -1,6 +1,7 @@
 // Text for the WhatsApp receipts physios send to patients. Each message is
 // timestamped on the patient's phone, which is what makes it a verifiable record.
 
+import { patientName } from "@/lib/names";
 import { formatDate, formatDay, formatMoney } from "./format";
 import type { Clinic, PatientSummary, Payment, Session } from "./types";
 
@@ -45,7 +46,7 @@ export function sessionReceipt(
   }[session.status];
 
   return [
-    `Hi ${p.name},`,
+    `Hi ${patientName(p)},`,
     headline,
     ...(cost ? [session.status === "attended" ? `Charge: ${cost}` : `Cancellation charge: ${cost}`] : []),
     balanceLine(p, sender.clinic.currency),
@@ -58,7 +59,7 @@ export function sessionReceipt(
 export function paymentReceipt(p: PatientSummary, payment: Pick<Payment, "amount" | "method" | "paid_on">, sender: Sender): string {
   const currency = sender.clinic.currency;
   return [
-    `Hi ${p.name},`,
+    `Hi ${patientName(p)},`,
     `💰 Received ${formatMoney(payment.amount, currency)} (${payment.method.toUpperCase()}) on ${formatDate(payment.paid_on)}. Thank you!`,
     `Total paid: ${formatMoney(p.amount_paid, currency)} of ${formatMoney(p.amount_billed, currency)}`,
     balanceLine(p, currency),
@@ -83,7 +84,7 @@ export function statement(p: PatientSummary, sessions: Session[], sender: Sender
   });
 
   return [
-    `Hi ${p.name}, here is your summary:`,
+    `Hi ${patientName(p)}, here is your summary:`,
     "",
     `Visits: ${p.visits}`,
     ...(p.sessions_bought > 0 ? [`Package: ${p.sessions_used} of ${p.sessions_bought} sessions used`] : []),

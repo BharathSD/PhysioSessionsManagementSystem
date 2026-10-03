@@ -15,12 +15,14 @@ export type Member = {
   clinic_id: string;
   user_id: string;
   role: "owner" | "physio";
-  display_name: string;
+  display_name: string; // without the designation — see physioName()
+  designation: string; // "Dr.", "Prof.", "Mr.", "Ms.", "Mrs." or ""
 };
 
 export type PatientSummary = {
   id: string;
   clinic_id: string;
+  title: string; // "Mr.", "Mrs.", … or "" — see patientName()
   name: string;
   phone: string | null;
   condition: string | null;

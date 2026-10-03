@@ -104,7 +104,7 @@ export function EmptyState({ title, children }: { title: string; children?: Reac
 
 export function initials(name: string): string {
   return name
-    .replace(/^(dr\.?|mr\.?|mrs\.?|ms\.?)\s+/i, "")
+    .replace(/^(dr|prof|mrs|mr|ms)\.?\s+/i, "")
     .split(/\s+/)
     .slice(0, 2)
     .map((w) => w[0]?.toUpperCase() ?? "")

@@ -7,6 +7,7 @@ import { getContext } from "@/lib/context";
 import { patientFee, priceVisit, standardFee, type VisitOutcome } from "@/lib/fees";
 import { formatDay, todayIn } from "@/lib/format";
 import { isCountryCode, toE164 } from "@/lib/phone";
+import { isDesignation, isPatientTitle, splitDesignation } from "@/lib/names";
 import { dobForAge } from "@/lib/overview";
 import { addDays } from "@/lib/schedule";
 import type { PaymentMethod, RateKind } from "@/lib/types";
@@ -46,6 +47,15 @@ function phoneFrom(form: FormData, clinicCountry: string): string | null | undef
 }
 
 /** Optional personal details from PatientDetailsFields. */
+/** Name and title; "Mrs. Lakshmi" typed into the name box works too. */
+function patientNameFrom(form: FormData) {
+  const typed = splitDesignation(text(form, "name"));
+  const picked = text(form, "title");
+  if (!typed.name) return { error: "Please enter the patient's name." };
+  if (!isPatientTitle(picked)) return { error: "Pick a title." };
+  return { name: typed.name, title: picked || typed.designation };
+}
+
 function personalFrom(form: FormData, today: string, clinicCountry: string) {
   const dob = isoDate(form, "date_of_birth");
   const age = text(form, "age") ? int(form, "age") : null;
@@ -279,8 +289,9 @@ export async function createPatient(_prev: FormState, form: FormData): Promise<F
   const { supabase, clinic } = ctx;
   const today = todayIn(clinic.timezone);
 
-  const name = text(form, "name");
-  if (!name) return { error: "Please enter the patient's name." };
+  const named = patientNameFrom(form);
+  if ("error" in named) return named;
+  const { name, title } = named;
 
   const phone = phoneFrom(form, clinic.country);
   if (phone === null) return { error: "That phone number doesn't look right for the selected country." };
@@ -318,6 +329,7 @@ export async function createPatient(_prev: FormState, form: FormData): Promise<F
     .insert({
       clinic_id: clinic.id,
       name,
+      title,
       phone: phone ?? null,
       condition: text(form, "condition") || null,
       default_visit_type_id: visitType,
@@ -379,8 +391,9 @@ export async function createPatient(_prev: FormState, form: FormData): Promise<F
 
 export async function updatePatient(patientId: string, _prev: FormState, form: FormData): Promise<FormState> {
   const { supabase, clinic } = await getContext();
-  const name = text(form, "name");
-  if (!name) return { error: "Name can't be empty." };
+  const named = patientNameFrom(form);
+  if ("error" in named) return named;
+  const { name, title } = named;
   const phone = phoneFrom(form, clinic.country);
   if (phone === null) return { error: "That phone number doesn't look right for the selected country." };
   const personal = personalFrom(form, todayIn(clinic.timezone), clinic.country);
@@ -390,6 +403,7 @@ export async function updatePatient(patientId: string, _prev: FormState, form: F
     .from("patients")
     .update({
       name,
+      title,
       phone: phone ?? null,
       condition: text(form, "condition") || null,
       default_visit_type_id: await visitTypeFrom(form),
@@ -1328,13 +1342,15 @@ export async function setLibraryItemArchived(id: string, archived: boolean) {
 export async function updateSettings(_prev: FormState, form: FormData): Promise<FormState> {
   const { supabase, clinic, member, userId } = await getContext();
 
-  const displayName = text(form, "display_name");
+  const typed = splitDesignation(text(form, "display_name"));
+  const picked = text(form, "designation");
+  if (!isDesignation(picked)) return { error: "Pick a title." };
   const clinicName = text(form, "clinic_name");
-  if (!displayName) return { error: "Your name is required." };
+  if (!typed.name) return { error: "Your name is required." };
 
   const { error: memberError } = await supabase
     .from("clinic_members")
-    .update({ display_name: displayName })
+    .update({ display_name: typed.name, designation: picked || typed.designation })
     .eq("clinic_id", clinic.id)
     .eq("user_id", userId);
   if (memberError) return { error: memberError.message };

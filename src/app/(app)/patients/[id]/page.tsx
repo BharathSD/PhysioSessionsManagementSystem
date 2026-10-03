@@ -8,6 +8,7 @@ import { ActionTile, PageHeader, SectionTitle } from "@/components/ui";
 import { VisitCost } from "@/components/visit-cost";
 import { getBilling, packageSlots } from "@/lib/billing";
 import { getContext } from "@/lib/context";
+import { patientName, physioName } from "@/lib/names";
 import { firstParam } from "@/lib/data";
 import { canChargeMiss, patientFee, standardFee } from "@/lib/fees";
 import { formatDate, formatDay, formatMoney, todayIn, whatsappLink } from "@/lib/format";
@@ -144,15 +145,15 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
   const notifyText =
     notifyRanges.length && p.phone
       ? cancellationNotice(
-          p.name,
+          patientName(p),
           notifyRanges,
           firstParam(sp.by) === "clinic" ? "clinic" : "patient",
           makeup,
           nextVisit(plan, upcoming.map((a) => a.scheduled_date), notifyRanges.at(-1)!.to, isOff),
-          { clinic, physioName: member.display_name },
+          { clinic, physioName: physioName(member) },
         )
       : null;
-  const sender = { clinic, physioName: member.display_name };
+  const sender = { clinic, physioName: physioName(member) };
   const money = (n: number) => formatMoney(n, clinic.currency);
   const base = `/patients/${p.id}`;
   const remainingOf = new Map(slots.map((s) => [s.id, s.remaining]));
@@ -240,7 +241,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
         back={{ href: "/patients", label: "Patients" }}
         title={
           <>
-            {p.name}
+            {patientName(p)}
             {p.archived && <span className="chip ml-2 bg-surface-2 align-middle text-sm text-muted">Archived</span>}
           </>
         }

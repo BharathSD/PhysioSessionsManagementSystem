@@ -8,6 +8,7 @@ const patient: PatientSummary = {
   id: "p",
   clinic_id: "c",
   name: "Rahul",
+  title: "",
   phone: "+919876543210",
   condition: null,
   archived: false,
@@ -33,6 +34,10 @@ describe("WhatsApp receipts", () => {
     expect(text).toContain("3 package sessions left · ₹1,500 due");
     expect(text).toContain("Next session: Mon, 5 Oct");
     expect(text).toContain("Pay via UPI: priya@okhdfc");
+  });
+
+  it("greets the patient with their title", () => {
+    expect(paymentReceipt({ ...patient, title: "Mr." }, { amount: 500, method: "cash", paid_on: "2026-10-01" }, sender)).toMatch(/^Hi Mr\. Rahul,/);
   });
 
   it("shows the charge for a paid visit", () => {

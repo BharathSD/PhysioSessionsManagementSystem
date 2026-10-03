@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui";
 import { getContext } from "@/lib/context";
+import { patientName, physioName } from "@/lib/names";
 import { toSummary } from "@/lib/data";
 import { datesBetween, isOffFor, type DayOff } from "@/lib/days-off";
 import { formatDay, whatsappLink } from "@/lib/format";
@@ -35,7 +36,7 @@ export default async function NotifyPage(props: PageProps<"/profile/days-off/[id
   const daysOff = (offs ?? []) as DayOff[];
   const told = new Set((notices ?? []).map((n) => n.patient_id as string));
   const days = datesBetween(c.from_date, c.to_date);
-  const sender = { clinic, physioName: member.display_name };
+  const sender = { clinic, physioName: physioName(member) };
 
   const affected = (rows ?? []).map(toSummary).flatMap((p) => {
     const own = ((plans ?? []) as Plan[]).filter((pl) => pl.patient_id === p.id);
@@ -73,14 +74,14 @@ export default async function NotifyPage(props: PageProps<"/profile/days-off/[id
             {affected.map(({ p, lost, flexible, next }) => (
               <li key={p.id} className="flex items-center gap-3 px-4 py-3">
                 <span className="min-w-0 flex-1">
-                  <span className="block font-medium">{p.name}</span>
+                  <span className="block font-medium">{patientName(p)}</span>
                   <span className="block text-sm text-muted">
                     {flexible ? "Comes on days they choose" : `Cancelled: ${lost.map(formatDay).join(", ")}`}
                   </span>
                 </span>
                 {p.phone ? (
                   <NotifyButton
-                    href={whatsappLink(p.phone, closureNotice(p.name, c, lost, next, sender))}
+                    href={whatsappLink(p.phone, closureNotice(patientName(p), c, lost, next, sender))}
                     dayOffId={c.id}
                     patientId={p.id}
                     told={told.has(p.id)}

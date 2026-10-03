@@ -8,6 +8,7 @@ import { VisitCost } from "@/components/visit-cost";
 import { getBilling } from "@/lib/billing";
 import { getBoard, type BoardRow } from "@/lib/board";
 import { getContext } from "@/lib/context";
+import { patientName, physioName } from "@/lib/names";
 import { firstParam } from "@/lib/data";
 import { canChargeMiss } from "@/lib/fees";
 import { formatDate, todayIn, whatsappLink } from "@/lib/format";
@@ -37,7 +38,7 @@ export default async function TodayPage(props: PageProps<"/today">) {
     ctx.supabase.from("patients").select("id, address").eq("archived", false).not("address", "is", null),
   ]);
   const rc: RowContext = {
-    sender: { clinic: ctx.clinic, physioName: ctx.member.display_name },
+    sender: { clinic: ctx.clinic, physioName: physioName(ctx.member) },
     addresses: new Map((withAddress ?? []).map((r) => [r.id as string, r.address as string])),
     rates,
     typeName,
@@ -109,7 +110,7 @@ export default async function TodayPage(props: PageProps<"/today">) {
                     <Link href={`/patients/${r.p.id}`} className="flex items-center gap-3 px-4 py-3">
                       <Icon name="ban" className="size-5 shrink-0 text-muted" />
                       <span className="min-w-0 flex-1">
-                        <span className="block font-medium">{r.p.name}</span>
+                        <span className="block font-medium">{patientName(r.p)}</span>
                         <span className="block text-sm text-muted">{r.off && describeOff(r.off)}</span>
                       </span>
                       <Icon name="chevron" className="size-5 text-muted" />
@@ -152,7 +153,7 @@ function PatientRow({ row, rc }: { row: BoardRow; rc: RowContext }) {
       <Link href={`/patients/${p.id}`} className="block">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="truncate text-lg font-semibold">{p.name}</p>
+            <p className="truncate text-lg font-semibold">{patientName(p)}</p>
             <p className="text-sm text-muted">
               {/* Once marked, the visit type is shown with its cost below. */}
               {[session ? null : rc.typeName(sessionType), expected?.label].filter(Boolean).join(" · ")}

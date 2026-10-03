@@ -5,6 +5,7 @@ import { getBilling } from "@/lib/billing";
 import { getBoard } from "@/lib/board";
 import { offOn } from "@/lib/days-off";
 import { getContext } from "@/lib/context";
+import { greetingName, patientName } from "@/lib/names";
 import { formatDate, formatDay, formatMoney, todayIn } from "@/lib/format";
 import { addDays, isActiveOn, isScheduledDay, type Plan } from "@/lib/schedule";
 
@@ -60,14 +61,13 @@ export default async function HomePage() {
   const expectedCount = board.expected.length;
   const expectedDone = board.expected.filter((r) => r.session).length;
   const progress = expectedCount ? Math.round((expectedDone / expectedCount) * 100) : 0;
-  const firstName = member.display_name.replace(/^dr\.?\s+/i, "Dr. ").split(" ").slice(0, 2).join(" ");
 
   return (
     <div>
       <div className="mb-5">
         <p className="text-base text-muted">{formatDate(today)}</p>
         <h1 className="text-[1.65rem] leading-tight font-semibold">
-          {greeting(clinic.timezone)}, {firstName}
+          {greeting(clinic.timezone)}, {greetingName(member)}
         </h1>
       </div>
 
@@ -136,7 +136,7 @@ export default async function HomePage() {
               href={`/patients/${r.p.id}/past-sessions`}
               icon="alert"
               tone="warn"
-              title={`${r.p.name} — not marked yesterday`}
+              title={`${patientName(r.p)} — not marked yesterday`}
               detail="Tap to mark present or absent"
             />
           ))}
@@ -148,7 +148,7 @@ export default async function HomePage() {
               title={`${money(totalDue)} due from ${owing.length} patient${owing.length === 1 ? "" : "s"}`}
               detail={owing
                 .slice(0, 3)
-                .map((p) => p.name)
+                .map((p) => patientName(p))
                 .join(", ")}
             />
           )}
@@ -160,7 +160,7 @@ export default async function HomePage() {
               title={`${ending.length} package${ending.length === 1 ? "" : "s"} running out`}
               detail={`${ending
                 .slice(0, 3)
-                .map((p) => p.name)
+                .map((p) => patientName(p))
                 .join(", ")} — offer a renewal`}
             />
           )}

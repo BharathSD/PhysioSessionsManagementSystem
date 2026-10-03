@@ -55,7 +55,7 @@ export async function createAccount(): Promise<Account> {
   const { data, error } = await sb.auth.signUp({
     email,
     password,
-    options: { data: { full_name: "Dr. Test Physio", clinic_name: "UI Test Clinic (delete me)" } },
+    options: { data: { full_name: "Test Physio", designation: "Dr.", clinic_name: "UI Test Clinic (delete me)" } },
   });
   if (error) throw new Error(`Sign-up failed: ${error.message}`);
   if (!data.session) throw new Error("Sign-up needs email confirmation — turn off 'Confirm email' in the test Supabase project.");

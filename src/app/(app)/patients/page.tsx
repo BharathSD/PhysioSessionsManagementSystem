@@ -1,3 +1,4 @@
+import { patientName } from "@/lib/names";
 import Link from "next/link";
 import { BalanceChips } from "@/components/balance";
 import { Icon } from "@/components/icons";
@@ -116,7 +117,7 @@ export default async function PatientsPage(props: PageProps<"/patients">) {
                     {initials(p.name) || "?"}
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-base font-medium">{p.name}</span>
+                    <span className="block truncate text-base font-medium">{patientName(p)}</span>
                     <span className="block truncate text-sm text-muted">
                       {p.last_visit ? `Last visit ${formatDate(p.last_visit)}` : "No visits yet"}
                       {p.condition ? ` · ${p.condition}` : ""}

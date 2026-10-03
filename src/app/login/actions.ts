@@ -2,6 +2,7 @@
 
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { isDesignation, splitDesignation } from "@/lib/names";
 import { createClient } from "@/lib/supabase/server";
 
 export type AuthState = { error?: string; message?: string } | undefined;
@@ -17,7 +18,11 @@ export async function signIn(_prev: AuthState, form: FormData): Promise<AuthStat
 }
 
 export async function signUp(_prev: AuthState, form: FormData): Promise<AuthState> {
-  const fullName = String(form.get("full_name") ?? "").trim();
+  // "Dr. Priya" typed into the name works too: the title moves to the designation.
+  const typed = splitDesignation(String(form.get("full_name") ?? ""));
+  const fullName = typed.name;
+  const picked = String(form.get("designation") ?? "");
+  const designation = (isDesignation(picked) && picked) || typed.designation;
   const password = String(form.get("password") ?? "");
   if (!fullName) return { error: "Please enter your name." };
   if (password.length < 8) return { error: "Password must be at least 8 characters." };
@@ -28,7 +33,7 @@ export async function signUp(_prev: AuthState, form: FormData): Promise<AuthStat
     email: String(form.get("email") ?? "").trim(),
     password,
     options: {
-      data: { full_name: fullName, clinic_name: String(form.get("clinic_name") ?? "").trim() },
+      data: { full_name: fullName, designation, clinic_name: String(form.get("clinic_name") ?? "").trim() },
       emailRedirectTo: `${origin}/auth/callback`,
     },
   });

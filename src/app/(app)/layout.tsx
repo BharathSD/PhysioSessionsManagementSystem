@@ -3,6 +3,7 @@ import { Flash } from "@/components/flash";
 import { AccountMenu, BottomTabs, TopTabs } from "@/components/nav";
 import { initials } from "@/components/ui";
 import { getContext } from "@/lib/context";
+import { physioName } from "@/lib/names";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const { clinic, member, email } = await getContext();
@@ -14,7 +15,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand text-base font-bold text-brand-fg">P</div>
           <span className="min-w-0 flex-1 truncate text-base font-semibold">{clinic.name}</span>
           <TopTabs />
-          <AccountMenu initials={initials(member.display_name)} name={member.display_name} email={email} />
+          <AccountMenu initials={initials(member.display_name)} name={physioName(member)} email={email} />
         </div>
       </header>
       <Suspense>

@@ -1,5 +1,7 @@
 "use client";
 
+import { TitlePicker } from "@/components/title-picker";
+import { PATIENT_TITLES } from "@/lib/names";
 import { useRef, useState } from "react";
 import { DateField } from "@/components/date-field";
 import { FeeInputs } from "@/components/fee-inputs";
@@ -47,6 +49,7 @@ export function AddPatientWizard({
     hint: "Only the name is required.",
     body: (
       <>
+        <TitlePicker name="title" legend={<>Title <em className="font-normal text-muted">(optional)</em></>} titles={PATIENT_TITLES} />
         <label className="field">
           <span>Full name</span>
           <input name="name" required autoComplete="off" autoCapitalize="words" placeholder="e.g. Rahul Sharma" />

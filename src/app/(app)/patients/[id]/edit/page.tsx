@@ -1,3 +1,5 @@
+import { TitlePicker } from "@/components/title-picker";
+import { PATIENT_TITLES } from "@/lib/names";
 import { ActionForm } from "@/components/action-form";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Icon } from "@/components/icons";
@@ -26,6 +28,7 @@ export default async function EditPatientPage(props: PageProps<"/patients/[id]/e
     <div>
       <PageHeader back={{ href: `/patients/${p.id}`, label: p.name }} title="Edit details" />
       <ActionForm action={updatePatient.bind(null, p.id)} submitLabel="Save changes" className="card space-y-5">
+        <TitlePicker name="title" legend={<>Title <em className="font-normal text-muted">(optional)</em></>} titles={PATIENT_TITLES} defaultValue={p.title} />
         <label className="field">
           <span>Full name</span>
           <input name="name" required defaultValue={p.name} />
