@@ -33,6 +33,11 @@ export default async function ProfilePage() {
         <LinkRow href="/profile/fees" icon="rupee" title="Fees & visit types" detail="In-clinic, home visit, online… and no-show fees" />
       </div>
 
+      <SectionTitle>Availability</SectionTitle>
+      <div className="overflow-hidden rounded-2xl border border-border bg-surface">
+        <LinkRow href="/profile/days-off" icon="calendar" title="Days off" detail="Clinic closed or you're away — cancel everyone's sessions and notify them" />
+      </div>
+
       <SectionTitle>Security</SectionTitle>
       <div className="overflow-hidden rounded-2xl border border-border bg-surface">
         <LinkRow href="/reset-password" icon="edit" title="Change password" detail={email} />

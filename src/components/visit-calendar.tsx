@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { restorePatientDay } from "@/app/(app)/actions";
+import { describeOff, offOn, type DayOff } from "@/lib/days-off";
 import { addDays, isActiveOn, isScheduledDay, planVisitType, type Plan } from "@/lib/schedule";
 import type { SessionStatus } from "@/lib/types";
 
@@ -12,6 +14,7 @@ type DayState =
   | { kind: "visit"; visit: CalendarVisit }
   | { kind: "upcoming"; visitTypeId: string | null; booked: boolean }
   | { kind: "unmarked"; visitTypeId: string | null; booked: boolean }
+  | { kind: "off"; visitTypeId: string | null; off: DayOff }
   | { kind: "none" };
 
 const LOOK: Record<SessionStatus, { symbol: string; label: string; className: string }> = {
@@ -37,6 +40,7 @@ export function VisitCalendar({
   defaultType,
   typeNames,
   today,
+  daysOff = [],
 }: {
   patientId: string;
   visits: CalendarVisit[];
@@ -45,10 +49,14 @@ export function VisitCalendar({
   defaultType: string | null;
   typeNames: Record<string, string>;
   today: string;
+  daysOff?: DayOff[];
 }) {
   // The right-hand (or only) month shown.
   const [month, setMonth] = useState(today.slice(0, 7));
   const [picked, setPicked] = useState<string | null>(null);
+  // "Cancel days" mode: tap several upcoming days, then cancel them together.
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
 
   const byDate = new Map(visits.map((v) => [v.date, v]));
   const bookingOn = new Map(bookings.filter((b) => b.status === "booked").map((b) => [b.date, b]));
@@ -65,6 +73,8 @@ export function VisitCalendar({
     const scheduled = Boolean(plan && isScheduledDay(plan, date));
     if (!booking && !scheduled) return { kind: "none" };
     const visitTypeId = booking?.visitTypeId ?? (plan ? planVisitType(plan, date) : null) ?? defaultType;
+    const off = offOn(daysOff, patientId, date);
+    if (off) return { kind: "off", visitTypeId, off };
     // Today isn't over yet: an unmarked session today is still coming up.
     return date >= today ? { kind: "upcoming", visitTypeId, booked: Boolean(booking) } : { kind: "unmarked", visitTypeId, booked: Boolean(booking) };
   }
@@ -103,7 +113,14 @@ export function VisitCalendar({
             const dayNum = +d.slice(8);
             const base = "relative flex h-11 flex-col items-center justify-center rounded-lg text-sm leading-none";
             const ring = `${d === today ? " outline-2 outline-offset-1 outline-brand" : ""}${d === picked ? " ring-2 ring-fg" : ""}`;
-            const select = () => setPicked(picked === d ? null : d);
+            const isSelected = selected.includes(d);
+            const select = () => {
+              if (selecting) {
+                if (s.kind === "upcoming") setSelected((xs) => (isSelected ? xs.filter((x) => x !== d) : [...xs, d].sort()));
+                return;
+              }
+              setPicked(picked === d ? null : d);
+            };
 
             if (s.kind === "visit") {
               const look = LOOK[s.visit.status];
@@ -121,6 +138,21 @@ export function VisitCalendar({
                 </button>
               );
             }
+            if (s.kind === "off") {
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={select}
+                  title={describeOff(s.off)}
+                  aria-label={`${dayNum}: Cancelled in advance`}
+                  className={`${base} border-2 border-dashed border-border text-muted${ring}`}
+                >
+                  <span className="line-through">{dayNum}</span>
+                  <span className="text-[10px]">⊘</span>
+                </button>
+              );
+            }
             if (s.kind === "upcoming" || s.kind === "unmarked") {
               const what = s.kind === "upcoming" ? `Coming up${s.booked ? " (booked)" : ""}` : "Not marked";
               return (
@@ -130,9 +162,14 @@ export function VisitCalendar({
                   onClick={select}
                   title={`${what} · ${typeName(s.visitTypeId)}`}
                   aria-label={`${dayNum}: ${what}`}
+                  aria-pressed={selecting ? isSelected : undefined}
                   className={`${base} font-medium ${
-                    s.kind === "upcoming" ? "border-2 border-chart text-fg" : "border-2 border-dashed border-warn text-warn"
-                  }${ring}`}
+                    isSelected
+                      ? "border-2 border-bad bg-bad-soft text-bad"
+                      : s.kind === "upcoming"
+                        ? "border-2 border-chart text-fg"
+                        : "border-2 border-dashed border-warn text-warn"
+                  }${selecting && s.kind !== "upcoming" ? " opacity-40" : ""}${ring}`}
                 >
                   {dayNum}
                   <span className="text-[10px]">{s.kind === "upcoming" ? "○" : "?"}</span>
@@ -170,7 +207,20 @@ export function VisitCalendar({
         >
           ‹
         </button>
-        <span className="text-sm text-muted">Tap a day for details</span>
+        {selecting ? (
+          <span className="text-sm font-medium text-bad">Tap the days to cancel</span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setSelecting(true);
+              setPicked(null);
+            }}
+            className="btn min-h-10 px-3 text-sm"
+          >
+            Cancel days…
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setMonth(addMonths(month, 1))}
@@ -187,19 +237,61 @@ export function VisitCalendar({
         {renderMonth(month)}
       </div>
 
+      {selecting && (
+        <div className="flex items-center gap-2 rounded-2xl bg-bad-soft px-3 py-2">
+          <span className="flex-1 text-sm text-bad">
+            {selected.length === 0 ? "No days picked yet" : `${selected.length} day${selected.length === 1 ? "" : "s"} picked`}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setSelecting(false);
+              setSelected([]);
+            }}
+            className="btn min-h-10 px-3 text-sm"
+          >
+            Back
+          </button>
+          {selected.length > 0 && (
+            <Link href={`/patients/${patientId}/cancel-days?dates=${selected.join(",")}`} className="btn min-h-10 border-bad bg-bad px-3 text-sm text-white">
+              Cancel {selected.length} day{selected.length === 1 ? "" : "s"}
+            </Link>
+          )}
+        </div>
+      )}
+
       {/* What the tapped day was / will be, with the action that fits it. */}
-      {picked && pickedState && pickedState.kind !== "none" && (
+      {!selecting && picked && pickedState && pickedState.kind !== "none" && (
         <div className="flex items-center justify-between gap-3 rounded-2xl bg-surface-2 px-4 py-3">
           <span className="text-base">
             <span className="font-medium">{fmt(picked)}</span>
             <span className="block text-sm text-muted">
               {pickedState.kind === "visit"
                 ? `${LOOK[pickedState.visit.status].label} · ${typeName(pickedState.visit.visitTypeId)}${pickedState.visit.pain !== null ? ` · pain ${pickedState.visit.pain}/10` : ""}`
-                : pickedState.kind === "upcoming"
+                : pickedState.kind === "off"
+                  ? `${describeOff(pickedState.off)} · ${typeName(pickedState.visitTypeId)}`
+                  : pickedState.kind === "upcoming"
                   ? `${picked === today ? "Today · not marked yet" : pickedState.booked ? "Booked" : "Scheduled"} · ${typeName(pickedState.visitTypeId)}`
                   : `Scheduled but not marked · ${typeName(pickedState.visitTypeId)}`}
             </span>
           </span>
+          {pickedState.kind === "upcoming" && picked > today && (
+            <Link href={`/patients/${patientId}/cancel-days?dates=${picked}`} className="btn shrink-0 text-bad">
+              Cancel this day
+            </Link>
+          )}
+          {pickedState.kind === "off" &&
+            (pickedState.off.patient_id && pickedState.off.from_date === pickedState.off.to_date ? (
+              <form action={restorePatientDay.bind(null, pickedState.off.id, patientId)}>
+                <button type="submit" className="btn shrink-0">
+                  Restore
+                </button>
+              </form>
+            ) : (
+              <Link href={pickedState.off.patient_id ? `/patients/${patientId}?tab=schedule` : "/profile/days-off"} className="btn shrink-0">
+                Manage
+              </Link>
+            ))}
           {pickedState.kind === "visit" && (
             <Link href={`/patients/${patientId}/visits/${pickedState.visit.id}`} className="btn shrink-0">
               Edit
@@ -219,6 +311,7 @@ export function VisitCalendar({
         <Legend swatch="bg-warn-soft text-warn ring-1 ring-warn/50" symbol="⊘" label="Cancelled" />
         <Legend swatch="border-2 border-chart" symbol="○" label="Coming up" />
         <Legend swatch="border-2 border-dashed border-warn text-warn" symbol="?" label="Not marked" />
+        <Legend swatch="border-2 border-dashed border-border text-muted" symbol="⊘" label="Cancelled in advance" />
       </ul>
     </div>
   );

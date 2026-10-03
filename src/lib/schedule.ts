@@ -103,14 +103,16 @@ export function projectedEnd(
   today: string,
   sessionsLeft: number,
   attendedDates: string[],
+  isOff: (date: string) => boolean = () => false,
 ): { date: string; approximate: boolean } | null {
   if (sessionsLeft <= 0) return null;
 
   if (plan.mode === "fixed_days") {
     let remaining = sessionsLeft;
     let d = isScheduledDay(plan, today) && !attendedDates.includes(today) ? today : nextScheduledDay(plan, today);
-    while (d) {
-      if (--remaining === 0) return { date: d, approximate: false };
+    for (let guard = 0; d && guard < 1000; guard++) {
+      // Days off don't use a session; the package lasts longer.
+      if (!isOff(d) && --remaining === 0) return { date: d, approximate: false };
       d = nextScheduledDay(plan, d);
     }
     return null;
@@ -136,11 +138,15 @@ export function describePlan(plan: Plan): string {
 }
 
 /** Next expected visit after `after`: the earlier of the plan's next day and any booking. */
-export function nextVisit(plan: Plan | undefined, bookedDates: string[], after: string): string | null {
-  const candidates = [
-    ...(plan ? [nextScheduledDay(plan, after)] : []),
-    ...bookedDates.filter((d) => d > after),
-  ].filter((d): d is string => Boolean(d));
+export function nextVisit(
+  plan: Plan | undefined,
+  bookedDates: string[],
+  after: string,
+  isOff: (date: string) => boolean = () => false,
+): string | null {
+  let planDay = plan ? nextScheduledDay(plan, after) : null;
+  for (let guard = 0; plan && planDay && isOff(planDay) && guard < 400; guard++) planDay = nextScheduledDay(plan, planDay);
+  const candidates = [planDay, ...bookedDates.filter((d) => d > after && !isOff(d))].filter((d): d is string => Boolean(d));
   return candidates.sort()[0] ?? null;
 }
 

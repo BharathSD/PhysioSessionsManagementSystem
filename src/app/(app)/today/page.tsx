@@ -12,6 +12,7 @@ import { firstParam } from "@/lib/data";
 import { canChargeMiss } from "@/lib/fees";
 import { formatDate, todayIn, whatsappLink } from "@/lib/format";
 import { sessionReceipt } from "@/lib/messages";
+import { describeOff } from "@/lib/days-off";
 import { STATUS } from "@/lib/status";
 import type { Clinic, Rate } from "@/lib/types";
 import { deleteSession, markToday } from "../actions";
@@ -30,7 +31,7 @@ export default async function TodayPage(props: PageProps<"/today">) {
   const q = firstParam((await props.searchParams).q);
   const ctx = await getContext();
   const today = todayIn(ctx.clinic.timezone);
-  const [{ expected, others, seen }, { rates, typeName }, { data: withAddress }] = await Promise.all([
+  const [{ expected, others, offToday, clinicClosed, seen }, { rates, typeName }, { data: withAddress }] = await Promise.all([
     getBoard(ctx, today, q),
     getBilling(),
     ctx.supabase.from("patients").select("id, address").eq("archived", false).not("address", "is", null),
@@ -47,6 +48,19 @@ export default async function TodayPage(props: PageProps<"/today">) {
   return (
     <div>
       <PageHeader title="Today" subtitle={`${formatDate(today)} · ${seen} seen`} />
+
+      {clinicClosed && (
+        <div className="mb-3 flex items-start gap-3 rounded-2xl bg-warn-soft p-3 text-base">
+          <Icon name="ban" className="mt-0.5 size-5 shrink-0 text-warn" />
+          <span className="flex-1">
+            <span className="block font-semibold text-warn">Clinic closed today{clinicClosed.reason ? ` · ${clinicClosed.reason}` : ""}</span>
+            <span className="block text-sm text-muted">Scheduled sessions are cancelled. You can still mark anyone who comes.</span>
+          </span>
+          <Link href="/profile/days-off" className="text-sm font-medium text-brand">
+            Change
+          </Link>
+        </div>
+      )}
 
       <form role="search" className="relative mb-2">
         <Icon name="search" className="pointer-events-none absolute top-1/2 left-3.5 size-5 -translate-y-1/2 text-muted" />
@@ -84,6 +98,26 @@ export default async function TodayPage(props: PageProps<"/today">) {
                 <PatientRow key={r.p.id} row={r} rc={rc} />
               ))}
             </ul>
+          )}
+
+          {offToday.length > 0 && (
+            <>
+              <SectionTitle>Off today (cancelled in advance)</SectionTitle>
+              <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
+                {offToday.map((r) => (
+                  <li key={r.p.id}>
+                    <Link href={`/patients/${r.p.id}`} className="flex items-center gap-3 px-4 py-3">
+                      <Icon name="ban" className="size-5 shrink-0 text-muted" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-medium">{r.p.name}</span>
+                        <span className="block text-sm text-muted">{r.off && describeOff(r.off)}</span>
+                      </span>
+                      <Icon name="chevron" className="size-5 text-muted" />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
 
           {others.length > 0 && (

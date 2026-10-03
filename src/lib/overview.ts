@@ -1,6 +1,7 @@
 // Calculations for a patient's Overview tab. Plain functions over data already
 // loaded for the patient page, so they're easy to test.
 
+import type { DayOff } from "./days-off";
 import { addDays, isActiveOn, isScheduledDay, mondayOf, planVisitType, type Plan } from "./schedule";
 import type { Appointment, Charge, Package, Payment, Rate, Session } from "./types";
 
@@ -68,14 +69,18 @@ export function upcomingVisits(
   today: string,
   days = 7,
   includeToday = false,
+  offOn: (date: string) => DayOff | undefined = () => undefined,
 ) {
-  const out: { date: string; visitTypeId: string | null; booked: boolean }[] = [];
+  // Days cancelled in advance stay in the list, flagged, so they can be shown (and restored).
+  const out: { date: string; visitTypeId: string | null; booked: boolean; off?: DayOff }[] = [];
   for (let i = includeToday ? 0 : 1; i <= days; i++) {
     const date = addDays(today, i);
     const booking = bookings.find((b) => b.scheduled_date === date);
     const plan = plans.find((p) => isActiveOn(p, date));
-    if (booking) out.push({ date, visitTypeId: booking.visit_type_id ?? defaultType, booked: true });
-    else if (plan && isScheduledDay(plan, date)) out.push({ date, visitTypeId: planVisitType(plan, date) ?? defaultType, booked: false });
+    const off = offOn(date);
+    const flag = off ? { off } : {};
+    if (booking) out.push({ date, visitTypeId: booking.visit_type_id ?? defaultType, booked: true, ...flag });
+    else if (plan && isScheduledDay(plan, date)) out.push({ date, visitTypeId: planVisitType(plan, date) ?? defaultType, booked: false, ...flag });
   }
   return out;
 }

@@ -21,7 +21,8 @@ import { formatPhone } from "@/lib/phone";
 import { describePlan, type Plan } from "@/lib/schedule";
 import { STATUS } from "@/lib/status";
 import type { Appointment, Charge, Package, PatientSummary, Payment, Rate, Session } from "@/lib/types";
-import { cancelBooking } from "../../actions";
+import { describeOff, offOn, type DayOff } from "@/lib/days-off";
+import { cancelBooking, restorePatientDay } from "../../actions";
 
 export type PatientDetails = {
   date_of_birth: string | null;
@@ -64,6 +65,7 @@ export function Overview(props: {
   currency: string;
   typeName: (id: string | null | undefined) => string;
   summaryLink: string | null;
+  daysOff: DayOff[];
   base: string;
 }) {
   const { p, details, visits, today, typeName, base } = props;
@@ -105,7 +107,9 @@ export function Overview(props: {
 
   // Coming up
   const todayMarked = visits.some((v) => v.session_date === today);
-  const next7 = upcomingVisits(props.plans, props.upcoming, p.default_visit_type_id, today, 7, !todayMarked);
+  const next7 = upcomingVisits(props.plans, props.upcoming, p.default_visit_type_id, today, 7, !todayMarked, (d) =>
+    offOn(props.daysOff, p.id, d),
+  );
   const flexiblePlan = props.plan?.mode === "flexible" ? props.plan : undefined;
 
   // Alerts
@@ -166,6 +170,7 @@ export function Overview(props: {
           defaultType={p.default_visit_type_id}
           typeNames={props.typeNames}
           today={today}
+          daysOff={props.daysOff}
         />
       </div>
 
@@ -226,17 +231,45 @@ export function Overview(props: {
           <p className="text-base text-muted">{flexiblePlan ? `${describePlan(flexiblePlan)} — book days as they choose them.` : "Nothing scheduled in the next 7 days."}</p>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {next7.map((u) => (
-              <span key={u.date} className="rounded-xl bg-surface-2 px-3 py-2 text-sm">
-                <span className="block font-semibold">{u.date === today ? "Today" : formatDay(u.date)}</span>
-                <span className="block text-muted">
-                  {typeName(u.visitTypeId)}
-                  {u.booked ? " · booked" : ""}
+            {next7.map((u) =>
+              u.off ? (
+                // Cancelled in advance: struck through, with Restore for the patient's own single days off.
+                <span key={u.date} className="rounded-xl border border-dashed border-border px-3 py-2 text-sm text-muted">
+                  <span className="block font-semibold line-through">{u.date === today ? "Today" : formatDay(u.date)}</span>
+                  <span className="block">{describeOff(u.off)}</span>
+                  {u.off.patient_id && u.off.from_date === u.off.to_date && (
+                    <form action={restorePatientDay.bind(null, u.off.id, p.id)}>
+                      <button type="submit" className="mt-0.5 text-xs font-medium text-brand underline">
+                        Restore
+                      </button>
+                    </form>
+                  )}
                 </span>
-              </span>
-            ))}
+              ) : (
+                <span key={u.date} className="flex items-start gap-2 rounded-xl bg-surface-2 py-2 pr-1 pl-3 text-sm">
+                  <span>
+                    <span className="block font-semibold">{u.date === today ? "Today" : formatDay(u.date)}</span>
+                    <span className="block text-muted">
+                      {typeName(u.visitTypeId)}
+                      {u.booked ? " · booked" : ""}
+                    </span>
+                  </span>
+                  <Link
+                    href={`${base}/cancel-days?dates=${u.date}`}
+                    aria-label={`Cancel ${formatDay(u.date)}`}
+                    title="Cancel this day"
+                    className="flex size-8 items-center justify-center rounded-lg text-muted hover:bg-surface hover:text-bad"
+                  >
+                    <Icon name="x" className="size-4" />
+                  </Link>
+                </span>
+              ),
+            )}
           </div>
         )}
+        <Link href={`${base}/cancel-days`} className="inline-flex min-h-10 items-center gap-1 text-sm font-medium text-brand">
+          <Icon name="ban" className="size-4" /> Away for a while? Take a break
+        </Link>
         {p.sessions_bought > 0 && (
           <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
             <div>

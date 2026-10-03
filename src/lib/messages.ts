@@ -95,3 +95,52 @@ export function statement(p: PatientSummary, sessions: Session[], sender: Sender
     footer(sender, p),
   ].join("\n");
 }
+
+/** "20 Oct" or "20–24 Oct" */
+function span(from: string, to: string): string {
+  if (from === to) return formatDay(from);
+  const short = (d: string) => formatDay(d).replace(/^\w+, /, "");
+  return `${short(from)} – ${short(to)}`;
+}
+
+/** Telling a patient the clinic is closed. Used one tap at a time now; ready for automatic sending later. */
+export function closureNotice(
+  patientName: string,
+  closure: { from_date: string; to_date: string; reason: string | null },
+  affected: string[],
+  nextAfter: string | null,
+  sender: Sender,
+): string {
+  const closed = `🗓️ ${sender.clinic.name} will be closed ${closure.from_date === closure.to_date ? "on" : "from"} ${span(closure.from_date, closure.to_date)}${closure.reason ? ` (${closure.reason})` : ""}.`;
+  return [
+    `Hi ${patientName},`,
+    closed,
+    ...(affected.length > 0
+      ? [`Your session${affected.length === 1 ? "" : "s"} on ${affected.map(formatDay).join(", ")} ${affected.length === 1 ? "is" : "are"} cancelled — no charge.`]
+      : []),
+    ...(nextAfter ? [`📅 Your next session: ${formatDay(nextAfter)}`] : []),
+    "",
+    `– ${sender.physioName}`,
+  ].join("\n");
+}
+
+/** Confirming one patient's cancelled days (and a make-up session, if booked). */
+export function cancellationNotice(
+  patientName: string,
+  ranges: { from: string; to: string }[],
+  by: "clinic" | "patient",
+  makeup: string | null,
+  nextAfter: string | null,
+  sender: Sender,
+): string {
+  const when = ranges.map((r) => span(r.from, r.to)).join(", ");
+  return [
+    `Hi ${patientName},`,
+    by === "clinic"
+      ? `🗓️ Sorry — I won't be available on ${when}, so your session${ranges.length === 1 && ranges[0].from === ranges[0].to ? " is" : "s are"} cancelled. No charge.`
+      : `🗓️ Noted — no session on ${when}. No charge.`,
+    ...(makeup ? [`📅 Make-up session booked: ${formatDay(makeup)}`] : nextAfter ? [`📅 Your next session: ${formatDay(nextAfter)}`] : []),
+    "",
+    `– ${sender.physioName}, ${sender.clinic.name}`,
+  ].join("\n");
+}

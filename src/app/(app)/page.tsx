@@ -3,8 +3,9 @@ import { Icon } from "@/components/icons";
 import { LinkRow, SectionTitle } from "@/components/ui";
 import { getBilling } from "@/lib/billing";
 import { getBoard } from "@/lib/board";
+import { offOn } from "@/lib/days-off";
 import { getContext } from "@/lib/context";
-import { formatDate, formatMoney, todayIn } from "@/lib/format";
+import { formatDate, formatDay, formatMoney, todayIn } from "@/lib/format";
 import { addDays, isActiveOn, isScheduledDay, type Plan } from "@/lib/schedule";
 
 export const metadata = { title: "Home" };
@@ -37,6 +38,9 @@ export default async function HomePage() {
   const totalDue = owing.reduce((sum, p) => sum + p.amount_due, 0);
   const ending = patients.filter((p) => p.sessions_bought > 0 && p.sessions_left <= 1);
   const noFees = !rates.some((r) => r.patient_id === null && r.kind === "visit" && r.amount !== null);
+  const closure = board.daysOff
+    .filter((d) => d.patient_id === null && d.from_date <= addDays(today, 30))
+    .sort((a, b) => a.from_date.localeCompare(b.from_date))[0];
   const unmarked = yesterdayBoard.expected.filter((r) => !r.session && r.expected?.kind !== "flexible");
   const collected = (monthPayments ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
   const money = (n: number) => formatMoney(n, clinic.currency);
@@ -46,8 +50,9 @@ export default async function HomePage() {
   const week = Array.from({ length: 7 }, (_, i) => {
     const day = addDays(today, i + 1);
     const ids = new Set<string>();
-    for (const pl of (plans ?? []) as Plan[]) if (active.has(pl.patient_id) && isActiveOn(pl, day) && isScheduledDay(pl, day)) ids.add(pl.patient_id);
-    for (const b of bookings ?? []) if (active.has(b.patient_id) && b.scheduled_date === day) ids.add(b.patient_id);
+    const free = (pid: string) => active.has(pid) && !offOn(board.daysOff, pid, day);
+    for (const pl of (plans ?? []) as Plan[]) if (free(pl.patient_id) && isActiveOn(pl, day) && isScheduledDay(pl, day)) ids.add(pl.patient_id);
+    for (const b of bookings ?? []) if (free(b.patient_id) && b.scheduled_date === day) ids.add(b.patient_id);
     return { day, count: ids.size };
   });
   const busiest = Math.max(1, ...week.map((d) => d.count));
@@ -96,7 +101,7 @@ export default async function HomePage() {
 
       {/* Needs attention */}
       <SectionTitle>Needs attention</SectionTitle>
-      {owing.length + ending.length + unmarked.length + Number(noFees) === 0 ? (
+      {owing.length + ending.length + unmarked.length + Number(noFees) + Number(Boolean(closure)) === 0 ? (
         <div className="card flex items-center gap-3">
           <span className="flex size-10 items-center justify-center rounded-xl bg-ok-soft text-ok">
             <Icon name="check" />
@@ -105,6 +110,17 @@ export default async function HomePage() {
         </div>
       ) : (
         <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
+          {closure && (
+            <LinkRow
+              href={`/profile/days-off/${closure.id}/notify`}
+              icon="calendar"
+              tone="warn"
+              title={`Clinic closed ${
+                closure.from_date === closure.to_date ? formatDay(closure.from_date) : `${formatDay(closure.from_date)} – ${formatDay(closure.to_date)}`
+              }`}
+              detail={`${closure.reason ? `${closure.reason} · ` : ""}tap to tell patients on WhatsApp`}
+            />
+          )}
           {noFees && (
             <LinkRow
               href="/profile/fees"

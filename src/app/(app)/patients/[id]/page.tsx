@@ -17,7 +17,10 @@ import { formatPhone } from "@/lib/phone";
 import { describePlan, isScheduledDay, nextVisit, planOn, planVisitType, projectedEnd, WEEKDAYS, type Plan } from "@/lib/schedule";
 import { STATUS } from "@/lib/status";
 import type { Appointment, Charge, Package, Payment, Session } from "@/lib/types";
+import { describeOff, isOffFor, offOn, type DayOff } from "@/lib/days-off";
+import { cancellationNotice } from "@/lib/messages";
 import { Overview, type PatientDetails } from "./overview";
+import { restorePatientDay } from "../../actions";
 import { deleteCharge, deletePackage, deletePayment, deleteSession, endPlan, markToday } from "../../actions";
 
 const TABS = [
@@ -61,6 +64,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
     { data: extras },
     { data: details },
     { data: allBookings },
+    { data: offRows },
   ] =
     await Promise.all([
       getBilling(),
@@ -82,6 +86,8 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
         .eq("id", id)
         .maybeSingle(),
       supabase.from("appointments").select("booked_on, scheduled_date, status, visit_type_id").eq("patient_id", id).order("booked_on", { ascending: false }),
+      // This patient's days off and the clinic's closures.
+      supabase.from("days_off").select("*").or(`patient_id.is.null,patient_id.eq.${id}`).order("from_date"),
     ]);
 
   const visits = (sessions ?? []) as Visit[];
@@ -94,14 +100,38 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
   const plan = planOn(plans, today);
   const futurePlan = plans.find((pl) => pl.valid_from > today);
   // For receipts: the session after today. For "Next:" on screen: today, if it's still to be marked.
-  const next = nextVisit(plan, upcoming.map((a) => a.scheduled_date), today);
+  const daysOff = (offRows ?? []) as DayOff[];
+  const isOff = isOffFor(daysOff, p.id);
+  const offToday = offOn(daysOff, p.id, today);
+  const next = nextVisit(plan, upcoming.map((a) => a.scheduled_date), today, isOff);
   const attendedDates = visits.filter((v) => v.status === "attended").map((v) => v.session_date);
-  const ends = plan && p.sessions_left > 0 ? projectedEnd(plan, today, p.sessions_left, attendedDates) : null;
+  const ends = plan && p.sessions_left > 0 ? projectedEnd(plan, today, p.sessions_left, attendedDates, isOff) : null;
   const todaySession = visits.find((v) => v.session_date === today);
   const todayBooking = upcoming.find((a) => a.scheduled_date === today);
   const todayType = todayBooking?.visit_type_id ?? (plan && planVisitType(plan, today)) ?? p.default_visit_type_id;
   const expectedToday = Boolean(todayBooking) || Boolean(plan && isScheduledDay(plan, today));
-  const nextShown = expectedToday && !todaySession ? today : next;
+  const nextShown = expectedToday && !todaySession && !offToday ? today : next;
+
+  // Just cancelled some days: offer a WhatsApp message to let the patient know.
+  const notifyParam = firstParam(sp.notify);
+  const notifyRanges = notifyParam
+    ? notifyParam.split(",").map((r) => {
+        const [from, to] = r.split("~");
+        return { from, to: to ?? from };
+      })
+    : [];
+  const makeup = firstParam(sp.makeup) || null;
+  const notifyText =
+    notifyRanges.length && p.phone
+      ? cancellationNotice(
+          p.name,
+          notifyRanges,
+          firstParam(sp.by) === "clinic" ? "clinic" : "patient",
+          makeup,
+          nextVisit(plan, upcoming.map((a) => a.scheduled_date), notifyRanges.at(-1)!.to, isOff),
+          { clinic, physioName: member.display_name },
+        )
+      : null;
   const sender = { clinic, physioName: member.display_name };
   const money = (n: number) => formatMoney(n, clinic.currency);
   const base = `/patients/${p.id}`;
@@ -220,6 +250,17 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
           </Link>
         )}
       </div>
+
+      {notifyText && (
+        <a
+          href={whatsappLink(p.phone, notifyText)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn btn-whatsapp mb-3 w-full text-base"
+        >
+          <Icon name="message" /> Let {p.name.split(" ")[0]} know on WhatsApp
+        </a>
+      )}
 
       {/* Pinned precautions — on every tab, before anything else */}
       {details?.precautions && (
@@ -350,6 +391,12 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
           </div>
         ) : (
           <>
+            {offToday && (
+              <p className="mb-2.5 flex flex-wrap items-center gap-2 rounded-xl bg-surface-2 px-3 py-2 text-sm">
+                <Icon name="ban" className="size-4 text-muted" />
+                <span className="flex-1">Off today — {describeOff(offToday)}. You can still mark them if they come.</span>
+              </p>
+            )}
             <p className="mb-2.5 text-base font-medium">
               Today&apos;s attendance <span className="font-normal text-muted">· {typeName(todayType)}</span>
             </p>
@@ -419,6 +466,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
             typeNames={Object.fromEntries(visitTypes.map((t) => [t.id, t.name]))}
             summaryLink={p.phone ? whatsappLink(p.phone, statement(p, visits, sender, typeName)) : null}
             base={base}
+            daysOff={daysOff}
           />
         )}
 
@@ -574,6 +622,37 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
                 )}
               </div>
             </div>
+
+            <SectionTitle aside={<Link href={`${base}/cancel-days`} className="text-brand normal-case">+ Take a break</Link>}>Days off</SectionTitle>
+            {daysOff.filter((d) => d.to_date >= today).length === 0 ? (
+              <p className="card text-base text-muted">No days off coming up. Cancel days from the calendar or Coming up on the Overview.</p>
+            ) : (
+              <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
+                {daysOff
+                  .filter((d) => d.to_date >= today)
+                  .map((d) => (
+                    <li key={d.id} className="flex items-center gap-3 px-4 py-3">
+                      <span className="min-w-0 flex-1">
+                        <span className="block font-medium">
+                          {d.from_date === d.to_date ? formatDay(d.from_date) : `${formatDay(d.from_date)} – ${formatDay(d.to_date)}`}
+                        </span>
+                        <span className="block text-sm text-muted">{describeOff(d)}</span>
+                      </span>
+                      {d.patient_id ? (
+                        <form action={restorePatientDay.bind(null, d.id, p.id)}>
+                          <ConfirmButton className="btn min-h-10 px-3 text-sm" confirmText="Restore?">
+                            Restore
+                          </ConfirmButton>
+                        </form>
+                      ) : (
+                        <Link href="/profile/days-off" className="btn min-h-10 px-3 text-sm text-muted">
+                          Clinic
+                        </Link>
+                      )}
+                    </li>
+                  ))}
+              </ul>
+            )}
 
             {plans.length > 0 && (
               <>

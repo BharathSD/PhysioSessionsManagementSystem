@@ -3,6 +3,7 @@
 
 import type { getContext } from "./context";
 import { toSummary } from "./data";
+import { isOffFor, offOn, type DayOff } from "./days-off";
 import { formatDate } from "./format";
 import { addDays, describePlan, flexibleProgress, isScheduledDay, nextVisit, planVisitType, type Plan } from "./schedule";
 import type { Appointment, PatientSummary, Session } from "./types";
@@ -17,20 +18,25 @@ export type BoardRow = {
   next: string | null;
   /** Visit type for this day: the booking's, the schedule's for this weekday, or the patient's usual. */
   visitTypeId: string | null;
+  /** Cancelled in advance for this day (clinic closed, or this patient's day off). */
+  off?: DayOff;
 };
 
 export async function getBoard({ supabase }: Ctx, date: string, search = "") {
   let patientsQuery = supabase.from("patient_summary").select("*").eq("archived", false).order("name");
   if (search) patientsQuery = patientsQuery.ilike("name", `%${search}%`);
 
-  const [{ data: rows, error }, { data: sessions }, { data: plans }, { data: bookings }, { data: recent }] = await Promise.all([
+  const [{ data: rows, error }, { data: sessions }, { data: plans }, { data: bookings }, { data: recent }, { data: offs }] = await Promise.all([
     patientsQuery,
     supabase.from("sessions").select("*").eq("session_date", date).order("created_at"),
     supabase.from("schedules").select("*").lte("valid_from", date).or(`valid_until.is.null,valid_until.gte.${date}`),
     supabase.from("appointments").select("*").eq("status", "booked").gte("scheduled_date", date).order("scheduled_date"),
     // Enough history to count progress in flexible plans (periods up to 8 weeks).
     supabase.from("sessions").select("patient_id, session_date").eq("status", "attended").gte("session_date", addDays(date, -56)),
+    // Days off from this date on (for today's list and for skipping them in "next visit").
+    supabase.from("days_off").select("*").gte("to_date", date),
   ]);
+  const daysOff = (offs ?? []) as DayOff[];
   if (error) throw new Error(error.message);
 
   const marked = new Map<string, Session>();
@@ -44,11 +50,13 @@ export async function getBoard({ supabase }: Ctx, date: string, search = "") {
     const plan = planOf.get(p.id);
     const booked = bookingsOf.get(p.id) ?? [];
     const bookedToday = booked.find((b) => b.scheduled_date === date);
+    const isOff = isOffFor(daysOff, p.id);
     const row: BoardRow = {
       p,
       session: marked.get(p.id),
-      next: nextVisit(plan, booked.map((b) => b.scheduled_date), date),
+      next: nextVisit(plan, booked.map((b) => b.scheduled_date), date, isOff),
       visitTypeId: (plan && planVisitType(plan, date)) ?? p.default_visit_type_id,
+      off: offOn(daysOff, p.id, date),
     };
 
     if (bookedToday) {
@@ -71,11 +79,16 @@ export async function getBoard({ supabase }: Ctx, date: string, search = "") {
 
   // Not yet marked first, so each list shrinks as the day goes on.
   const byPending = (a: BoardRow, b: BoardRow) => Number(Boolean(a.session)) - Number(Boolean(b.session));
-  const expected = board.filter((r) => r.expected).sort(byPending);
+  // Would have come today but the day was cancelled in advance (unless they came anyway).
+  const cancelledAhead = (r: BoardRow) => Boolean(r.expected && r.off && !r.session);
+  const expected = board.filter((r) => r.expected && !cancelledAhead(r)).sort(byPending);
+  const offToday = board.filter(cancelledAhead);
+  // Everyone else stays available as a walk-in, even on a closed day.
   const others = board.filter((r) => !r.expected).sort(byPending);
+  const clinicClosed = daysOff.find((d) => d.patient_id === null && d.from_date <= date && d.to_date >= date);
   const seen = [...marked.values()].filter((s) => s.status === "attended").length;
 
-  return { expected, others, seen, all: board };
+  return { expected, others, offToday, clinicClosed, seen, all: board, daysOff };
 }
 
 export function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {

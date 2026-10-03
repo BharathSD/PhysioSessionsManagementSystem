@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { getBilling, packageSlots } from "@/lib/billing";
 import { getContext } from "@/lib/context";
 import { patientFee, priceVisit, standardFee, type VisitOutcome } from "@/lib/fees";
-import { todayIn } from "@/lib/format";
+import { formatDay, todayIn } from "@/lib/format";
 import { isCountryCode, toE164 } from "@/lib/phone";
 import { dobForAge } from "@/lib/overview";
 import { addDays } from "@/lib/schedule";
@@ -920,6 +920,110 @@ export async function setVisitTypeArchived(typeId: string, archived: boolean) {
   const { error } = await supabase.from("visit_types").update({ archived }).eq("id", typeId);
   if (error) throw new Error(error.message);
   refresh();
+}
+
+// ---------------------------------------------------------------------------
+// Days off, cancelled in advance
+// ---------------------------------------------------------------------------
+
+/** Clinic closed / physio away for a date range. Then go straight to telling patients. */
+export async function addClinicDaysOff(_prev: FormState, form: FormData): Promise<FormState> {
+  const { supabase, clinic } = await getContext();
+  const today = todayIn(clinic.timezone);
+  const from = isoDate(form, "from_date");
+  const to = isoDate(form, "to_date") ?? from;
+  if (!from || !to) return { error: "Pick the first and last day." };
+  if (to < from) return { error: "The last day can't be before the first day." };
+  if (to < today) return { error: "Those days have already passed." };
+
+  const { data, error } = await supabase
+    .from("days_off")
+    .insert({ clinic_id: clinic.id, patient_id: null, from_date: from, to_date: to, cancelled_by: "clinic", reason: text(form, "reason") || null })
+    .select("id")
+    .single();
+  if (error) return { error: dbError(error) };
+  refresh();
+  redirect(`/profile/days-off/${data.id}/notify`);
+}
+
+export async function removeDayOff(dayOffId: string) {
+  const { supabase } = await getContext();
+  const { error } = await supabase.from("days_off").delete().eq("id", dayOffId);
+  if (error) throw new Error(error.message);
+  refresh();
+}
+
+/** Tick a patient as told about a clinic closure (called when their WhatsApp opens). */
+export async function markNotified(dayOffId: string, patientId: string) {
+  const { supabase, clinic } = await getContext();
+  await supabase.from("day_off_notices").upsert({ day_off_id: dayOffId, patient_id: patientId, clinic_id: clinic.id });
+  revalidatePath(`/profile/days-off/${dayOffId}/notify`);
+}
+
+/**
+ * One patient can't come: picked days (`dates`) or a break (`from_date`–`to_date`).
+ * A single day can be rescheduled to a new date in the same step.
+ */
+export async function cancelPatientDays(patientId: string, _prev: FormState, form: FormData): Promise<FormState> {
+  const { supabase, clinic } = await getContext();
+  const today = todayIn(clinic.timezone);
+  const by = text(form, "cancelled_by") === "clinic" ? "clinic" : "patient";
+  const reason = text(form, "reason") || null;
+
+  const picked = [...new Set(form.getAll("dates").map(String))].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  const from = isoDate(form, "from_date");
+  const to = isoDate(form, "to_date") ?? from;
+  const ranges: { from: string; to: string }[] = picked.length ? picked.map((d) => ({ from: d, to: d })) : from && to ? [{ from, to }] : [];
+  if (ranges.length === 0) return { error: "Pick the days to cancel." };
+  if (ranges.some((r) => r.to < r.from)) return { error: "The last day can't be before the first day." };
+  if (ranges.some((r) => r.from < today)) return { error: "Only today or later can be cancelled in advance. Past days are marked from the calendar." };
+
+  // Days already marked are edited, not cancelled in advance.
+  const { data: marked } = await supabase
+    .from("sessions")
+    .select("session_date")
+    .eq("patient_id", patientId)
+    .gte("session_date", ranges[0].from)
+    .lte("session_date", ranges.at(-1)!.to);
+  const clash = (marked ?? []).find((m) => ranges.some((r) => m.session_date >= r.from && m.session_date <= r.to));
+  if (clash) return { error: `${clash.session_date} is already marked — edit that visit from the calendar instead.` };
+
+  const { error } = await supabase
+    .from("days_off")
+    .insert(ranges.map((r) => ({ clinic_id: clinic.id, patient_id: patientId, from_date: r.from, to_date: r.to, cancelled_by: by, reason })));
+  if (error) return { error: dbError(error) };
+
+  const reschedule = ranges.length === 1 && ranges[0].from === ranges[0].to ? isoDate(form, "reschedule_date") : null;
+  if (reschedule) {
+    if (reschedule <= today) return { error: "Pick a new date after today." };
+    const { error: e } = await supabase.from("appointments").insert({
+      clinic_id: clinic.id,
+      patient_id: patientId,
+      scheduled_date: reschedule,
+      booked_on: today,
+      visit_type_id: await visitTypeFrom(form),
+      note: `Make-up for ${formatDay(ranges[0].from)}`,
+    });
+    if (e) return { error: dbError(e) };
+  }
+
+  refresh();
+  const days = ranges.reduce((n, r) => n + Math.round((Date.parse(r.to) - Date.parse(r.from)) / 86_400_000) + 1, 0);
+  const qs = new URLSearchParams({
+    done: `${days} day${days === 1 ? "" : "s"} cancelled${reschedule ? " · make-up booked" : ""}`,
+    notify: ranges.map((r) => (r.from === r.to ? r.from : `${r.from}~${r.to}`)).join(","),
+    by,
+    ...(reschedule ? { makeup: reschedule } : {}),
+  });
+  redirect(`/patients/${patientId}?${qs}`);
+}
+
+/** Undo a patient's day off (the scheduled visits come back). */
+export async function restorePatientDay(dayOffId: string, patientId: string) {
+  const { supabase } = await getContext();
+  const { error } = await supabase.from("days_off").delete().eq("id", dayOffId).eq("patient_id", patientId);
+  if (error) throw new Error(error.message);
+  backToPatient(patientId, "overview", "Day restored");
 }
 
 // ---------------------------------------------------------------------------
