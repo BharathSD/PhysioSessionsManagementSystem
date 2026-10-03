@@ -60,6 +60,24 @@ describe("patient title", () => {
   });
 });
 
+describe("contact details (0010)", () => {
+  it("splits titles and relationships out of what was typed before", { timeout: 120_000 }, async () => {
+    const old = await freshDb("0010_contact_details.sql");
+    const a = await signUp(old, USER_A);
+    await a.as(
+      "insert into patients (clinic_id, name, referred_by, emergency_name) values ($1, 'A', 'Dr. Mehta, ortho', 'Mrs. Anita (wife)'), ($1, 'B', 'Self', 'Ravi')",
+      [a.clinicId],
+    );
+    await applyMigration(old, "0010_contact_details.sql");
+    expect(await a.as("select referred_by_title, referred_by, emergency_title, emergency_name, emergency_relation from patients order by name")).toEqual([
+      { referred_by_title: "Dr.", referred_by: "Mehta, ortho", emergency_title: "Mrs.", emergency_name: "Anita", emergency_relation: "wife" },
+      { referred_by_title: "", referred_by: "Self", emergency_title: "", emergency_name: "Ravi", emergency_relation: null },
+    ]);
+    // A map pin needs both coordinates.
+    await expect(a.as("update patients set latitude = 19.1")).rejects.toThrow();
+  });
+});
+
 describe("patient balance (patient_summary view)", () => {
   it("adds packages, visit charges and extra charges, minus payments", async () => {
     const [{ id: p }] = await as<{ id: string }>("insert into patients (clinic_id, name) values ($1, 'Rahul') returning id", [clinicId]);

@@ -59,7 +59,23 @@ test.describe.serial("patients: adding, details and overview", () => {
     await page.fill('textarea[name="precautions"]', "High BP — no heavy lifting");
     await page.fill('textarea[name="goals"]', "Walk 2 km without pain");
     await page.fill('input[name="age"]', "52");
-    await page.fill('textarea[name="address"]', "Flat 4B, Sea View, Bandra West, Mumbai");
+    await page.fill('input[name="referred_by"]', "Mehta, orthopaedic surgeon"); // "Dr." is picked by default
+    await page.fill('input[name="address"]', "Flat 4B, Sea View");
+    await page.fill('input[name="address_line2"]', "Bandra West");
+    await page.fill('input[name="city"]', "Mumbai");
+    await page.selectOption('select[name="state"]', "Maharashtra");
+    await page.locator('label:has(input[name="emergency_title"][value="Mrs."])').click();
+    await page.fill('input[name="emergency_name"]', "Anita");
+    await page.fill('input[name="emergency_relation"]', "Wife");
+
+    // A wrong PIN code is caught, and what was typed stays.
+    await page.fill('input[name="postal_code"]', "050");
+    await page.evaluate(() => document.querySelector<HTMLInputElement>('input[name="postal_code"]')!.removeAttribute("pattern"));
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText("PIN code should be 6 digits.")).toBeVisible();
+    await expect(page.locator('input[name="city"]')).toHaveValue("Mumbai");
+
+    await page.fill('input[name="postal_code"]', "400 050");
     await page.getByRole("button", { name: "Save changes" }).click();
 
     await expect(page.getByText("Details saved")).toBeVisible();
@@ -67,6 +83,10 @@ test.describe.serial("patients: adding, details and overview", () => {
     await expect(page.getByText("Walk 2 km without pain")).toBeVisible();
     await expect(page.getByText("~52 years")).toBeVisible();
     await expect(page.getByRole("link", { name: "Open in Maps" })).toBeVisible();
+    await expect(page.getByText("Mumbai – 400050")).toBeVisible();
+    await expect(page.getByText("Dr. Mehta, orthopaedic surgeon")).toBeVisible();
+    await expect(page.getByText("Mrs. Anita")).toBeVisible();
+    await expect(page.getByText("(Wife)")).toBeVisible();
   });
 
   test("overview: pain chart, attendance and coming up", async ({ page }) => {

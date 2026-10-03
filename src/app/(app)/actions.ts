@@ -7,6 +7,7 @@ import { getContext } from "@/lib/context";
 import { patientFee, priceVisit, standardFee, type VisitOutcome } from "@/lib/fees";
 import { formatDay, todayIn } from "@/lib/format";
 import { isCountryCode, toE164 } from "@/lib/phone";
+import { matchState, postalCodeProblem } from "@/lib/address";
 import { isDesignation, isPatientTitle, splitDesignation } from "@/lib/names";
 import { dobForAge } from "@/lib/overview";
 import { addDays } from "@/lib/schedule";
@@ -69,18 +70,57 @@ function personalFrom(form: FormData, today: string, clinicCountry: string) {
   const injury = isoDate(form, "injury_date");
   if (injury && injury > today) return { error: "The injury / surgery date can't be in the future." };
 
+  const address = addressFrom(form, clinicCountry);
+  if ("error" in address) return address;
+
+  // A title typed into a name ("Dr. Mehta") is used as the title.
+  const referrer = splitDesignation(text(form, "referred_by"));
+  const referrerTitle = text(form, "referred_by_title");
+  const emergency = splitDesignation(text(form, "emergency_name"));
+  const emergencyTitle = text(form, "emergency_title");
+  if (!isDesignation(referrerTitle) || !isPatientTitle(emergencyTitle)) return { error: "Pick a title from the list." };
+
   const gender = text(form, "gender");
   return {
-    referred_by: text(form, "referred_by") || null,
+    referred_by: referrer.name || null,
+    referred_by_title: referrer.name ? referrerTitle || referrer.designation : "",
     injury_date: injury,
     goals: text(form, "goals") || null,
     precautions: text(form, "precautions") || null,
     date_of_birth: dob ?? (age !== null ? dobForAge(age, today) : null),
     dob_is_estimate: !dob && age !== null,
     gender: ["female", "male", "other"].includes(gender) ? gender : null,
-    address: text(form, "address") || null,
-    emergency_name: text(form, "emergency_name") || null,
+    ...address,
+    emergency_title: emergency.name ? emergencyTitle || emergency.designation : "",
+    emergency_name: emergency.name || null,
+    emergency_relation: text(form, "emergency_relation") || null,
     emergency_phone: emergencyPhone,
+  };
+}
+
+/** Address parts and the optional map pin. */
+function addressFrom(form: FormData, clinicCountry: string) {
+  const country = text(form, "address_country") || clinicCountry;
+  if (!isCountryCode(country)) return { error: "Pick the address's country." };
+  const rawCode = text(form, "postal_code");
+  const postalCode = country === "IN" ? rawCode.replace(/\s+/g, "") : rawCode; // "400 052" → "400052"
+  const problem = postalCodeProblem(postalCode, country);
+  if (problem) return { error: problem };
+
+  const lat = text(form, "latitude") ? Number(text(form, "latitude")) : null;
+  const lng = text(form, "longitude") ? Number(text(form, "longitude")) : null;
+  const pinOk = (lat === null && lng === null) || (lat !== null && lng !== null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180);
+  if (!pinOk) return { error: "The map pin didn't save properly. Pick the spot on the map again." };
+
+  return {
+    address: text(form, "address") || null,
+    address_line2: text(form, "address_line2") || null,
+    city: text(form, "city") || null,
+    state: text(form, "state") ? matchState(text(form, "state"), country) : null,
+    postal_code: postalCode || null,
+    address_country: country,
+    latitude: lat,
+    longitude: lng,
   };
 }
 

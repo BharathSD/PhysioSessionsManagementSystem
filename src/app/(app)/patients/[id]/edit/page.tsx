@@ -10,7 +10,7 @@ import { VisitTypePicker } from "@/components/visit-type-picker";
 import { getBilling } from "@/lib/billing";
 import { getContext } from "@/lib/context";
 import { todayIn } from "@/lib/format";
-import { loadPatient } from "@/lib/patient";
+import { DETAIL_COLUMNS, loadPatient } from "@/lib/patient";
 import { setArchived, updatePatient } from "../../../actions";
 
 export const metadata = { title: "Edit patient" };
@@ -21,7 +21,7 @@ export default async function EditPatientPage(props: PageProps<"/patients/[id]/e
   const p = await loadPatient(ctx, id);
   const [{ activeTypes }, { data: details }] = await Promise.all([
     getBilling(),
-    ctx.supabase.from("patients").select("date_of_birth, dob_is_estimate, gender, address, emergency_name, emergency_phone, referred_by, injury_date, goals, precautions").eq("id", p.id).maybeSingle(),
+    ctx.supabase.from("patients").select(DETAIL_COLUMNS).eq("id", p.id).maybeSingle(),
   ]);
 
   return (

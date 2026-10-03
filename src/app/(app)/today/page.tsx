@@ -8,6 +8,7 @@ import { VisitCost } from "@/components/visit-cost";
 import { getBilling } from "@/lib/billing";
 import { getBoard, type BoardRow } from "@/lib/board";
 import { getContext } from "@/lib/context";
+import { addressLines, mapsLink, type Address } from "@/lib/address";
 import { patientName, physioName } from "@/lib/names";
 import { firstParam } from "@/lib/data";
 import { canChargeMiss } from "@/lib/fees";
@@ -22,7 +23,7 @@ export const metadata = { title: "Today" };
 
 type RowContext = {
   sender: { clinic: Clinic; physioName: string };
-  addresses: Map<string, string>;
+  addresses: Map<string, { text: string; link: string }>;
   rates: Rate[];
   typeName: (id: string | null | undefined) => string;
   today: string;
@@ -35,11 +36,20 @@ export default async function TodayPage(props: PageProps<"/today">) {
   const [{ expected, others, offToday, clinicClosed, seen }, { rates, typeName }, { data: withAddress }] = await Promise.all([
     getBoard(ctx, today, q),
     getBilling(),
-    ctx.supabase.from("patients").select("id, address").eq("archived", false).not("address", "is", null),
+    ctx.supabase
+      .from("patients")
+      .select("id, address, address_line2, city, state, postal_code, address_country, latitude, longitude")
+      .eq("archived", false)
+      .or("address.not.is.null,address_line2.not.is.null,city.not.is.null,latitude.not.is.null"),
   ]);
   const rc: RowContext = {
     sender: { clinic: ctx.clinic, physioName: physioName(ctx.member) },
-    addresses: new Map((withAddress ?? []).map((r) => [r.id as string, r.address as string])),
+    addresses: new Map(
+      ((withAddress ?? []) as (Address & { id: string })[]).map((a) => [
+        a.id,
+        { text: addressLines(a, ctx.clinic.country).join(", ") || "Pinned on the map", link: mapsLink(a, ctx.clinic.country)! },
+      ]),
+    ),
     rates,
     typeName,
     today,
@@ -174,12 +184,12 @@ function PatientRow({ row, rc }: { row: BoardRow; rc: RowContext }) {
       </Link>
       {address && (
         <a
-          href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`}
+          href={address.link}
           target="_blank"
           rel="noopener noreferrer"
           className="mt-2 flex items-start gap-2 rounded-xl bg-surface-2 px-3 py-2 text-sm"
         >
-          <span className="min-w-0 flex-1 truncate">📍 {address}</span>
+          <span className="min-w-0 flex-1 truncate">📍 {address.text}</span>
           <span className="shrink-0 font-medium text-brand">Maps</span>
         </a>
       )}

@@ -13,7 +13,7 @@ import { firstParam } from "@/lib/data";
 import { canChargeMiss, patientFee, standardFee } from "@/lib/fees";
 import { formatDate, formatDay, formatMoney, todayIn, whatsappLink } from "@/lib/format";
 import { paymentReceipt, sessionReceipt, statement } from "@/lib/messages";
-import { loadPatient } from "@/lib/patient";
+import { DETAIL_COLUMNS, loadPatient } from "@/lib/patient";
 import { formatPhone } from "@/lib/phone";
 import { describePlan, isScheduledDay, nextVisit, planOn, planVisitType, projectedEnd, WEEKDAYS, type Plan } from "@/lib/schedule";
 import { STATUS } from "@/lib/status";
@@ -86,7 +86,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
       supabase.from("charges").select("*").eq("patient_id", id).order("charge_date"),
       supabase
         .from("patients")
-        .select("date_of_birth, dob_is_estimate, gender, address, emergency_name, emergency_phone, referred_by, injury_date, goals, precautions")
+        .select(DETAIL_COLUMNS)
         .eq("id", id)
         .maybeSingle(),
       supabase.from("appointments").select("booked_on, scheduled_date, status, visit_type_id").eq("patient_id", id).order("booked_on", { ascending: false }),
@@ -498,6 +498,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
             ends={ends}
             today={today}
             currency={clinic.currency}
+            clinicCountry={clinic.country}
             typeName={typeName}
             typeNames={Object.fromEntries(visitTypes.map((t) => [t.id, t.name]))}
             summaryLink={p.phone ? whatsappLink(p.phone, statement(p, visits, sender, typeName)) : null}

@@ -17,6 +17,7 @@ import {
   weeklyVisits,
   type ActivityItem,
 } from "@/lib/overview";
+import { addressLines, hasAddress, mapsLink, type Address } from "@/lib/address";
 import { formatPhone } from "@/lib/phone";
 import { describePlan, type Plan } from "@/lib/schedule";
 import { STATUS } from "@/lib/status";
@@ -28,14 +29,16 @@ export type PatientDetails = {
   date_of_birth: string | null;
   dob_is_estimate: boolean;
   gender: "female" | "male" | "other" | null;
-  address: string | null;
+  emergency_title: string;
   emergency_name: string | null;
+  emergency_relation: string | null;
   emergency_phone: string | null;
+  referred_by_title: string;
   referred_by: string | null;
   injury_date: string | null;
   goals: string | null;
   precautions: string | null;
-};
+} & Address;
 
 const ACTIVITY_ICON: Record<ActivityItem["kind"], IconName> = {
   visit: "check",
@@ -63,6 +66,7 @@ export function Overview(props: {
   ends: { date: string; approximate: boolean } | null;
   today: string;
   currency: string;
+  clinicCountry: string;
   typeName: (id: string | null | undefined) => string;
   summaryLink: string | null;
   daysOff: DayOff[];
@@ -141,7 +145,7 @@ export function Overview(props: {
   );
 
   const age = details?.date_of_birth ? ageOn(details.date_of_birth, today) : null;
-  const hasAbout = Boolean(age !== null || details?.gender || details?.address || details?.emergency_phone || details?.emergency_name);
+  const hasAbout = Boolean(age !== null || details?.gender || (details && hasAddress(details)) || details?.emergency_phone || details?.emergency_name);
 
   return (
     <div>
@@ -390,7 +394,7 @@ export function Overview(props: {
             {details?.referred_by && (
               <div>
                 <dt className="text-sm text-muted">Referred by</dt>
-                <dd>{details.referred_by}</dd>
+                <dd>{[details.referred_by_title, details.referred_by].filter(Boolean).join(" ")}</dd>
               </div>
             )}
             {details?.goals && (
@@ -453,11 +457,18 @@ export function Overview(props: {
             {details?.date_of_birth && !details.dob_is_estimate && <span className="text-muted"> · born {formatDate(details.date_of_birth)}</span>}
           </p>
         )}
-        {details?.address && (
+        {details && hasAddress(details) && (
           <div className="flex items-start justify-between gap-3">
-            <p className="whitespace-pre-line">{details.address}</p>
+            <address className="not-italic">
+              {addressLines(details, props.clinicCountry).map((line, i) => (
+                <span key={i} className="block">
+                  {line}
+                </span>
+              ))}
+              {details.latitude != null && <span className="block text-sm text-ok">📍 Pinned on the map</span>}
+            </address>
             <a
-              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(details.address)}`}
+              href={mapsLink(details, props.clinicCountry)!}
               target="_blank"
               rel="noopener noreferrer"
               className="btn shrink-0"
@@ -470,7 +481,8 @@ export function Overview(props: {
           <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
             <p>
               <span className="block text-sm text-muted">Emergency contact</span>
-              {details.emergency_name}
+              {[details.emergency_title, details.emergency_name].filter(Boolean).join(" ")}
+              {details.emergency_relation && <span className="text-muted"> ({details.emergency_relation})</span>}
               {details.emergency_phone && <span className="text-muted"> · {formatPhone(details.emergency_phone)}</span>}
             </p>
             {details.emergency_phone && (
