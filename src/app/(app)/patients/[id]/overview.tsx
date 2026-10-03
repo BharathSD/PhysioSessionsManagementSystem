@@ -104,7 +104,8 @@ export function Overview(props: {
   const paidThisMonth = props.payments.filter((x) => x.paid_on >= monthStart).reduce((s, x) => s + Number(x.amount), 0);
 
   // Coming up
-  const next7 = upcomingVisits(props.plans, props.upcoming, p.default_visit_type_id, today, 7);
+  const todayMarked = visits.some((v) => v.session_date === today);
+  const next7 = upcomingVisits(props.plans, props.upcoming, p.default_visit_type_id, today, 7, !todayMarked);
   const flexiblePlan = props.plan?.mode === "flexible" ? props.plan : undefined;
 
   // Alerts
@@ -227,7 +228,7 @@ export function Overview(props: {
           <div className="flex flex-wrap gap-2">
             {next7.map((u) => (
               <span key={u.date} className="rounded-xl bg-surface-2 px-3 py-2 text-sm">
-                <span className="block font-semibold">{formatDay(u.date)}</span>
+                <span className="block font-semibold">{u.date === today ? "Today" : formatDay(u.date)}</span>
                 <span className="block text-muted">
                   {typeName(u.visitTypeId)}
                   {u.booked ? " · booked" : ""}

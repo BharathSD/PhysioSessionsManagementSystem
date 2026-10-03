@@ -57,10 +57,20 @@ export function absentStreak(visits: Visit[]): number {
   return n;
 }
 
-/** Expected visits over the next `days` days (after today): schedule days and bookings. */
-export function upcomingVisits(plans: Plan[], bookings: Pick<Appointment, "scheduled_date" | "visit_type_id">[], defaultType: string | null, today: string, days = 7) {
+/**
+ * Expected visits over the next `days` days: schedule days and bookings.
+ * Includes today when `includeToday` (today's session hasn't been marked yet).
+ */
+export function upcomingVisits(
+  plans: Plan[],
+  bookings: Pick<Appointment, "scheduled_date" | "visit_type_id">[],
+  defaultType: string | null,
+  today: string,
+  days = 7,
+  includeToday = false,
+) {
   const out: { date: string; visitTypeId: string | null; booked: boolean }[] = [];
-  for (let i = 1; i <= days; i++) {
+  for (let i = includeToday ? 0 : 1; i <= days; i++) {
     const date = addDays(today, i);
     const booking = bookings.find((b) => b.scheduled_date === date);
     const plan = plans.find((p) => isActiveOn(p, date));

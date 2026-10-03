@@ -65,7 +65,8 @@ export function VisitCalendar({
     const scheduled = Boolean(plan && isScheduledDay(plan, date));
     if (!booking && !scheduled) return { kind: "none" };
     const visitTypeId = booking?.visitTypeId ?? (plan ? planVisitType(plan, date) : null) ?? defaultType;
-    return date > today ? { kind: "upcoming", visitTypeId, booked: Boolean(booking) } : { kind: "unmarked", visitTypeId, booked: Boolean(booking) };
+    // Today isn't over yet: an unmarked session today is still coming up.
+    return date >= today ? { kind: "upcoming", visitTypeId, booked: Boolean(booking) } : { kind: "unmarked", visitTypeId, booked: Boolean(booking) };
   }
 
   const pickedState = picked ? stateOf(picked) : undefined;
@@ -195,7 +196,7 @@ export function VisitCalendar({
               {pickedState.kind === "visit"
                 ? `${LOOK[pickedState.visit.status].label} · ${typeName(pickedState.visit.visitTypeId)}${pickedState.visit.pain !== null ? ` · pain ${pickedState.visit.pain}/10` : ""}`
                 : pickedState.kind === "upcoming"
-                  ? `${pickedState.booked ? "Booked" : "Scheduled"} · ${typeName(pickedState.visitTypeId)}`
+                  ? `${picked === today ? "Today · not marked yet" : pickedState.booked ? "Booked" : "Scheduled"} · ${typeName(pickedState.visitTypeId)}`
                   : `Scheduled but not marked · ${typeName(pickedState.visitTypeId)}`}
             </span>
           </span>
@@ -204,7 +205,7 @@ export function VisitCalendar({
               Edit
             </Link>
           )}
-          {pickedState.kind === "unmarked" && (
+          {(pickedState.kind === "unmarked" || (pickedState.kind === "upcoming" && picked === today)) && (
             <Link href={`/patients/${patientId}/attendance?date=${picked}`} className="btn btn-primary shrink-0">
               Mark it
             </Link>

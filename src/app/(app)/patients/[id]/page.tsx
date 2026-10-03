@@ -14,7 +14,7 @@ import { formatDate, formatDay, formatMoney, todayIn, whatsappLink } from "@/lib
 import { paymentReceipt, sessionReceipt, statement } from "@/lib/messages";
 import { loadPatient } from "@/lib/patient";
 import { formatPhone } from "@/lib/phone";
-import { describePlan, nextVisit, planOn, planVisitType, projectedEnd, WEEKDAYS, type Plan } from "@/lib/schedule";
+import { describePlan, isScheduledDay, nextVisit, planOn, planVisitType, projectedEnd, WEEKDAYS, type Plan } from "@/lib/schedule";
 import { STATUS } from "@/lib/status";
 import type { Appointment, Charge, Package, Payment, Session } from "@/lib/types";
 import { Overview, type PatientDetails } from "./overview";
@@ -93,12 +93,15 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
 
   const plan = planOn(plans, today);
   const futurePlan = plans.find((pl) => pl.valid_from > today);
+  // For receipts: the session after today. For "Next:" on screen: today, if it's still to be marked.
   const next = nextVisit(plan, upcoming.map((a) => a.scheduled_date), today);
   const attendedDates = visits.filter((v) => v.status === "attended").map((v) => v.session_date);
   const ends = plan && p.sessions_left > 0 ? projectedEnd(plan, today, p.sessions_left, attendedDates) : null;
   const todaySession = visits.find((v) => v.session_date === today);
   const todayBooking = upcoming.find((a) => a.scheduled_date === today);
   const todayType = todayBooking?.visit_type_id ?? (plan && planVisitType(plan, today)) ?? p.default_visit_type_id;
+  const expectedToday = Boolean(todayBooking) || Boolean(plan && isScheduledDay(plan, today));
+  const nextShown = expectedToday && !todaySession ? today : next;
   const sender = { clinic, physioName: member.display_name };
   const money = (n: number) => formatMoney(n, clinic.currency);
   const base = `/patients/${p.id}`;
@@ -295,10 +298,10 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
             <span className="text-muted">Schedule: </span>
             <span className="font-medium">{plan ? describePlan(plan) : "None"}</span>
           </span>
-          {next && (
+          {nextShown && (
             <span>
               <span className="text-muted">Next: </span>
-              <span className="font-medium">{formatDay(next)}</span>
+              <span className="font-medium">{nextShown === today ? "Today" : formatDay(nextShown)}</span>
             </span>
           )}
         </div>
