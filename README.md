@@ -39,39 +39,66 @@ To try it on your phone over Wi-Fi, run `npm run dev -- -H 0.0.0.0` and open `ht
 ## Data model
 
 ```
-clinics ──< clinic_members >── auth.users     (a solo physio = clinic of one)
-   │
-   └──< patients ──< packages      (10 sessions for ₹5,000)
-                 ├──< schedules     (treatment plans: valid_from → valid_until)
-                 ├──< appointments  (one-off bookings: scheduled_date, booked_on)
-                 ├──< sessions      (date + attended / missed / cancelled, optional booking)
-                 └──< payments      (amount, method, paid_on)
+clinics ──< clinic_members >── auth.users        (a solo physio = clinic of one)
+   ├──< visit_types        (In-clinic, Home visit, Online, Assessment, + your own)
+   ├──< rates              (dated fees: clinic standard or per patient; no-show / cancellation fees)
+   ├──< days_off ──< day_off_notices   (clinic closures and who's been told)
+   └──< patients ──< packages       (10 sessions for ₹5,000; optionally one visit type)
+                 ├──< schedules      (fixed days or flexible; valid_from → valid_until; per-day visit types)
+                 ├──< appointments   (one-off bookings: scheduled_date, booked_on)
+                 ├──< sessions       (outcome, visit type, charge saved on the day, pain score)
+                 ├──< charges        (extra charges and discounts)
+                 ├──< payments       (amount, method, paid_on)
+                 └──< days_off       (one patient's cancelled days / breaks)
 
-patient_summary (view): sessions_bought, sessions_attended, sessions_left,
-                        amount_billed, amount_paid, amount_due, last_visit
+patient_summary (view): sessions_bought / used / left, visits,
+                        amount_billed, amount_paid, amount_due (< 0 = advance), last_visit
 ```
 
-Every table carries `clinic_id`, and RLS restricts each user to clinics they belong to. Composite foreign keys stop a session or payment from pointing at another clinic's patient.
+Every table carries `clinic_id`, and RLS restricts each user to clinics they belong to. Composite foreign keys stop a row from pointing at another clinic's patient. A visit stores the fee in force on its date, so changing fees never alters past bills.
+
+## Testing
+
+| Command | What it runs | Needs |
+|---|---|---|
+| `npm test` | Unit tests (fees, schedules, days off, Overview figures, messages, input parsing) and database tests (all migrations, balances, the billing upgrade, row-level security between clinics) on an in-memory Postgres | Nothing — runs offline in ~15 s |
+| `npm run test:e2e` | Browser tests (Playwright) of the real app: sign-in and passwords, attendance and receipts, the add-patient wizard, payments and fees, past sessions and editing visits, days off | A Supabase project (see below); builds the app first |
+| `npm run lint` / `npm run typecheck` | ESLint / TypeScript | — |
+
+**Browser tests setup (once):**
+1. `npx playwright install chromium`
+2. Use a **separate Supabase project for testing** so test accounts never mix with real data. Run all migrations in it and turn **off** *Confirm email*.
+3. Put its keys in `.env.test.local` (falls back to `.env.local` if missing):
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=…
+   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=…
+   SUPABASE_SERVICE_ROLE_KEY=…   # optional: lets the tests delete their test logins afterwards
+   ```
+   Each test file signs up its own `uitest.…@example.com` account with demo patients and removes its data afterwards.
+4. To test a server that's already running, set `E2E_BASE_URL=http://localhost:3000`.
+
+**CI:** GitHub Actions ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs lint, type-check, unit + database tests and a production build on every push to `main` and every pull request. Browser tests run on demand (*Actions → CI → Run workflow → e2e*) using the `E2E_SUPABASE_URL`, `E2E_SUPABASE_PUBLISHABLE_KEY` and `E2E_SUPABASE_SERVICE_ROLE_KEY` repository secrets.
 
 ## Code map
 
 | Path | What |
 |---|---|
-| `src/app/(app)/page.tsx` | Today screen: one-tap attendance + receipts |
-| `src/app/(app)/patients/` | Patient list, add patient, patient detail |
-| `src/app/(app)/settings/` | Physio name, clinic name, UPI ID |
+| `src/app/(app)/page.tsx` | Home: today at a glance, needs attention, next 7 days, this month |
+| `src/app/(app)/today/` | Today: one-tap Present / Absent, receipts, pain score, off today |
+| `src/app/(app)/patients/` | Patient list, add-patient wizard, patient page (Overview, Visits, Account, Schedule) and its task screens |
+| `src/app/(app)/profile/` | Profile, fees & visit types, days off + notify patients |
 | `src/app/(app)/actions.ts` | All server actions (writes) |
-| `src/lib/messages.ts` | WhatsApp receipt / summary text |
 | `src/lib/fees.ts` | Dated fee lookup and how each visit is priced (package or fee) |
 | `src/lib/schedule.ts` | Plan maths: who's expected on a day, next visit, projected package end |
-| `src/lib/phone.ts` | Country list, phone parsing to E.164 |
-| `src/lib/format.ts` | Dates (clinic timezone), money, `wa.me` links |
-| `src/components/date-field.tsx` | Type-or-pick date input |
-| `src/components/multi-date-field.tsx` | Tap-to-mark calendar for many past visits |
+| `src/lib/overview.ts` | Overview figures: attendance, adherence, dues since, recent activity |
+| `src/lib/days-off.ts` | Clinic closures and patients' days off |
+| `src/lib/board.ts` | Who's expected / marked / off on a day (Today and Home) |
+| `src/lib/messages.ts` | WhatsApp receipts, summaries and cancellation notices |
 | `src/proxy.ts` | Session refresh + redirect to `/login` |
+| `tests/`, `e2e/` | Unit + database tests (Vitest), browser tests (Playwright) |
 
 ## Roadmap
 
-- **v1.5**: patient "passbook" link (read-only page per patient) + UPI pay button
-- **Next**: session times in plans and bookings
-- **v2**: patient login (Firebase phone auth / Google), clinics with multiple physios and invites, offline mode, reports
+- **Next**: patient case history (assessment → progress → discharge, exercises per session)
+- **Later**: session times, patient "passbook" link + UPI pay button, reports, offline mode
+- **v2**: patient login, clinics with multiple physios and invites, automatic WhatsApp (Business API)
