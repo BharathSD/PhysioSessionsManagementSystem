@@ -1,6 +1,8 @@
 // Patient addresses: stored in parts (as a professional writes them), shown as
 // lines, and linked to Maps — by the map pin when there is one.
 
+import { msg } from "@/i18n";
+
 const regionNames = new Intl.DisplayNames(["en"], { type: "region" });
 
 export type Address = {
@@ -15,12 +17,43 @@ export type Address = {
 };
 
 /** India's 28 states and 8 union territories. */
-export const INDIAN_STATES = [
-  "Andaman and Nicobar Islands", "Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chandigarh", "Chhattisgarh",
-  "Dadra and Nagar Haveli and Daman and Diu", "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jammu and Kashmir",
-  "Jharkhand", "Karnataka", "Kerala", "Ladakh", "Lakshadweep", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya",
-  "Mizoram", "Nagaland", "Odisha", "Puducherry", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura",
-  "Uttar Pradesh", "Uttarakhand", "West Bengal",
+export const INDIAN_STATES: string[] = [
+  msg("Andaman and Nicobar Islands"),
+  msg("Andhra Pradesh"),
+  msg("Arunachal Pradesh"),
+  msg("Assam"),
+  msg("Bihar"),
+  msg("Chandigarh"),
+  msg("Chhattisgarh"),
+  msg("Dadra and Nagar Haveli and Daman and Diu"),
+  msg("Delhi"),
+  msg("Goa"),
+  msg("Gujarat"),
+  msg("Haryana"),
+  msg("Himachal Pradesh"),
+  msg("Jammu and Kashmir"),
+  msg("Jharkhand"),
+  msg("Karnataka"),
+  msg("Kerala"),
+  msg("Ladakh"),
+  msg("Lakshadweep"),
+  msg("Madhya Pradesh"),
+  msg("Maharashtra"),
+  msg("Manipur"),
+  msg("Meghalaya"),
+  msg("Mizoram"),
+  msg("Nagaland"),
+  msg("Odisha"),
+  msg("Puducherry"),
+  msg("Punjab"),
+  msg("Rajasthan"),
+  msg("Sikkim"),
+  msg("Tamil Nadu"),
+  msg("Telangana"),
+  msg("Tripura"),
+  msg("Uttar Pradesh"),
+  msg("Uttarakhand"),
+  msg("West Bengal"),
 ];
 
 /** The state as spelled in our list ("tamil nadu" → "Tamil Nadu"), or as given. */

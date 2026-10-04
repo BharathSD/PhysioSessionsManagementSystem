@@ -1,10 +1,13 @@
+"use client";
+
+import { useT } from "@/i18n/client";
 import type { VisitType } from "@/lib/types";
 
 /** Visit type as big tappable choices. Submits `name` (a visit type id, or "" for "Any"). */
 export function VisitTypePicker({
   types,
   name = "visit_type_id",
-  label = "Visit type",
+  label,
   defaultValue,
   anyLabel,
 }: {
@@ -15,12 +18,13 @@ export function VisitTypePicker({
   /** Adds an "any type" choice (value "") — e.g. for packages. */
   anyLabel?: string;
 }) {
+  const t = useT();
   const options = [...(anyLabel ? [{ id: "", name: anyLabel }] : []), ...types.map((t) => ({ id: t.id, name: t.name }))];
   const selected = defaultValue ?? (anyLabel ? "" : types[0]?.id);
 
   return (
     <fieldset className="field">
-      <legend className="mb-1.5">{label}</legend>
+      <legend className="mb-1.5">{label ?? t("Visit type")}</legend>
       <div className="flex flex-wrap gap-2">
         {options.map((o) => (
           <label

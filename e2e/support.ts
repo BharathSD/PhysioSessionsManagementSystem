@@ -47,11 +47,36 @@ function check(r: Result<unknown>) {
   if (r.error) throw new Error(r.error.message);
 }
 
+/** A unique throwaway login (cleaned up by the uitest.% SQL in the README if the service key isn't set). */
+export function newLogin() {
+  return {
+    email: `uitest.${Date.now()}.${Math.random().toString(36).slice(2, 6)}@example.com`,
+    password: `T3st-${Math.random().toString(36).slice(2)}!`,
+  };
+}
+
+/** An account created in the browser (e.g. from an invite link), signed in through the API for setup and cleanup. */
+export async function accountFor(login: { email: string; password: string }): Promise<Account> {
+  const sb = createClient(URL, KEY, { auth: { persistSession: false } });
+  const { error } = await sb.auth.signInWithPassword(login);
+  if (error) throw new Error(`Sign-in failed: ${error.message}`);
+  const { data: me } = await sb.auth.getUser();
+  // In a clinic team every member is visible: pick this user's own row.
+  const { clinic_id } = must(await sb.from("clinic_members").select("clinic_id").eq("user_id", me.user!.id).single());
+  const vt = must(await sb.from("visit_types").select("id, name"));
+  const id = (name: string) => vt.find((t) => t.name === name)!.id;
+  return {
+    ...login,
+    sb,
+    clinicId: clinic_id,
+    types: { clinic: id("In-clinic session"), home: id("Home visit"), online: id("Online session"), assessment: id("Assessment") },
+  };
+}
+
 /** Signs up a throwaway physio. Supabase "Confirm email" must be off for the test project. */
 export async function createAccount(): Promise<Account> {
   const sb = createClient(URL, KEY, { auth: { persistSession: false } });
-  const email = `uitest.${Date.now()}.${Math.random().toString(36).slice(2, 6)}@example.com`;
-  const password = `T3st-${Math.random().toString(36).slice(2)}!`;
+  const { email, password } = newLogin();
   const { data, error } = await sb.auth.signUp({
     email,
     password,

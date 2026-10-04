@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useT } from "@/i18n/client";
 
 type Option = { value: string; label: string; hint?: string; withAmount?: boolean };
 
@@ -21,6 +22,7 @@ export function ChoiceWithAmount({
   defaultAmount?: number | null;
 }) {
   const [value, setValue] = useState(defaultValue);
+  const t = useT();
   const showAmount = options.find((o) => o.value === value)?.withAmount;
 
   return (
@@ -47,13 +49,13 @@ export function ChoiceWithAmount({
       ))}
       {showAmount && (
         <label className="field pt-1">
-          <span>Amount</span>
+          <span>{t("Amount")}</span>
           <input
             name={amountName}
             inputMode="decimal"
             required
             defaultValue={defaultAmount ?? ""}
-            placeholder="e.g. 500"
+            placeholder={t("e.g. 500")}
             className="!text-xl font-semibold"
           />
         </label>

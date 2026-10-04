@@ -1,6 +1,7 @@
 // Dated fees. The fee for a visit is the one in force on the visit's date:
 // the patient's own fee if they have one then, otherwise the clinic standard.
 
+import { msg } from "@/i18n";
 import type { Rate, RateKind } from "./types";
 
 type Lookup = { patientId: string | null; kind: RateKind; visitTypeId: string | null; date: string };
@@ -49,8 +50,6 @@ export type Slot = { id: string; visit_type_id: string | null; start_date: strin
 export type VisitOutcome = "attended" | "missed" | "cancelled_patient" | "cancelled_clinic";
 
 const FEE_KIND = { attended: "visit", missed: "no_show", cancelled_patient: "cancellation" } as const;
-const FEE_LABEL = { visit: "visit", no_show: "no-show", cancellation: "cancellation" } as const;
-
 /** Oldest matching package with sessions left, preferring ones that had started by `date`. */
 function pickSlot(slots: Slot[], visitTypeId: string | null, date: string): Slot | undefined {
   const usable = slots
@@ -87,7 +86,9 @@ export function priceVisit(o: {
   const kind = FEE_KIND[o.status];
   const fee = feeFor(o.rates, { patientId: o.patientId, kind, visitTypeId: o.visitTypeId, date: o.date });
   if (fee === null && kind !== "visit") {
-    return { error: `No ${FEE_LABEL[kind]} fee is set yet. Add one in Profile → Fees, then try again.` };
+    return {
+      error: kind === "no_show" ? msg("No no-show fee is set yet. Add one in Profile → Fees, then try again.") : msg("No cancellation fee is set yet. Add one in Profile → Fees, then try again."),
+    };
   }
   return { package_id: null, charge: fee ?? 0 };
 }

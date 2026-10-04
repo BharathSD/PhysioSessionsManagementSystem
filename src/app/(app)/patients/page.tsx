@@ -4,17 +4,23 @@ import { BalanceChips } from "@/components/balance";
 import { Icon } from "@/components/icons";
 import { EmptyState, PageHeader, initials } from "@/components/ui";
 import { getContext } from "@/lib/context";
+import { getTeam, whoFrom } from "@/lib/team";
+import { WhoFilter } from "@/components/who-filter";
 import { firstParam, toSummary } from "@/lib/data";
-import { formatDate, formatMoney } from "@/lib/format";
+import { msg } from "@/i18n";
+import { getT } from "@/i18n/server";
 import type { PatientSummary } from "@/lib/types";
 
-export const metadata = { title: "Patients" };
+export async function generateMetadata() {
+  const t = await getT();
+  return { title: t("Patients") };
+}
 
 const FILTERS = [
-  { key: "all", label: "All" },
-  { key: "due", label: "Money due" },
-  { key: "ending", label: "Running out" },
-  { key: "archived", label: "Archived" },
+  { key: "all", label: msg("All") },
+  { key: "due", label: msg("Money due") },
+  { key: "ending", label: msg("Running out") },
+  { key: "archived", label: msg("Archived") },
 ] as const;
 type FilterKey = (typeof FILTERS)[number]["key"];
 
@@ -29,9 +35,13 @@ export default async function PatientsPage(props: PageProps<"/patients">) {
   const params = await props.searchParams;
   const q = firstParam(params.q);
   const filter = (FILTERS.find((f) => f.key === firstParam(params.filter))?.key ?? "all") as FilterKey;
-  const { supabase, clinic } = await getContext();
+  const { supabase, clinic, member, userId } = await getContext();
+  const t = await getT();
+  const team = await getTeam();
+  const who = team.isTeam ? whoFrom(firstParam(params.who), member) : "all";
 
   let query = supabase.from("patient_summary").select("*").eq("archived", filter === "archived").order("name");
+  if (who === "mine") query = query.eq("physio_id", userId);
   const digits = q.replace(/\D/g, "");
   if (digits.length >= 3) query = query.ilike("phone", `%${digits}%`);
   else if (q) query = query.ilike("name", `%${q}%`);
@@ -40,10 +50,11 @@ export default async function PatientsPage(props: PageProps<"/patients">) {
   const patients = (data ?? []).map(toSummary).filter(MATCH[filter]);
   if (filter === "due") patients.sort((a, b) => b.amount_due - a.amount_due);
 
-  const href = (f: FilterKey) => {
+  const href = (f: FilterKey, w: string = who) => {
     const sp = new URLSearchParams();
     if (f !== "all") sp.set("filter", f);
     if (q) sp.set("q", q);
+    if (team.isTeam) sp.set("who", w);
     const s = sp.toString();
     return s ? `/patients?${s}` : "/patients";
   };
@@ -51,21 +62,23 @@ export default async function PatientsPage(props: PageProps<"/patients">) {
   return (
     <div>
       <PageHeader
-        title="Patients"
+        title={t("Patients")}
         action={
           <Link href="/patients/new" className="btn btn-primary shrink-0 text-base">
-            <Icon name="plus" /> Add patient
+            <Icon name="plus" /> {t("Add patient")}
           </Link>
         }
       />
 
+      {team.isTeam && <WhoFilter who={who} hrefs={{ mine: href(filter, "mine"), all: href(filter, "all") }} />}
       <form role="search" className="relative">
         {filter !== "all" && <input type="hidden" name="filter" value={filter} />}
+        {team.isTeam && <input type="hidden" name="who" value={who} />}
         <Icon name="search" className="pointer-events-none absolute top-1/2 left-3.5 size-5 -translate-y-1/2 text-muted" />
         <input
           name="q"
           defaultValue={q}
-          placeholder="Search by name or phone…"
+          placeholder={t("Search by name or phone…")}
           className="min-h-12 w-full rounded-2xl border border-border bg-surface pr-4 pl-11 text-base outline-none focus:border-brand"
         />
       </form>
@@ -80,16 +93,16 @@ export default async function PatientsPage(props: PageProps<"/patients">) {
               filter === f.key ? "border-brand bg-brand text-brand-fg" : "border-border bg-surface text-muted"
             }`}
           >
-            {f.label}
+            {t(f.label)}
           </Link>
         ))}
       </div>
 
       {filter === "due" && patients.length > 0 && (
         <p className="mt-3 px-1 text-base">
-          Total due:{" "}
+          {t("Total due:")}{" "}
           <span className="font-semibold text-bad">
-            {formatMoney(
+            {t.money(
               patients.reduce((s, p) => s + p.amount_due, 0),
               clinic.currency,
             )}
@@ -102,11 +115,16 @@ export default async function PatientsPage(props: PageProps<"/patients">) {
           <EmptyState
             title={
               q
-                ? "No patients match your search"
-                : { all: "No patients yet", due: "No one owes money 🎉", ending: "No packages running out", archived: "No archived patients" }[filter]
+                ? t("No patients match your search")
+                : {
+                    all: t("No patients yet"),
+                    due: t("No one owes money 🎉"),
+                    ending: t("No packages running out"),
+                    archived: t("No archived patients"),
+                  }[filter]
             }
           >
-            {filter === "all" && !q && "Tap “Add patient” to get started."}
+            {filter === "all" && !q && t("Tap “Add patient” to get started.")}
           </EmptyState>
         ) : (
           <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
@@ -119,8 +137,9 @@ export default async function PatientsPage(props: PageProps<"/patients">) {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-base font-medium">{patientName(p)}</span>
                     <span className="block truncate text-sm text-muted">
-                      {p.last_visit ? `Last visit ${formatDate(p.last_visit)}` : "No visits yet"}
+                      {p.last_visit ? t("Last visit {date}", { date: t.date(p.last_visit) }) : t("No visits yet")}
                       {p.condition ? ` · ${p.condition}` : ""}
+                      {who === "all" && team.isTeam && p.physio_id ? ` · ${team.nameOf(p.physio_id)}` : ""}
                     </span>
                     <span className="mt-1.5 block">
                       <BalanceChips p={p} currency={clinic.currency} />

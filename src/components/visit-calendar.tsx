@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { restorePatientDay } from "@/app/(app)/actions";
 import { describeOff, offOn, type DayOff } from "@/lib/days-off";
+import { msg } from "@/i18n";
+import { useT } from "@/i18n/client";
 import { addDays, isActiveOn, isScheduledDay, planVisitType, type Plan } from "@/lib/schedule";
 import type { SessionStatus } from "@/lib/types";
 
@@ -18,13 +20,12 @@ type DayState =
   | { kind: "none" };
 
 const LOOK: Record<SessionStatus, { symbol: string; label: string; className: string }> = {
-  attended: { symbol: "✓", label: "Present", className: "bg-ok text-bg" },
-  missed: { symbol: "✗", label: "Absent", className: "bg-bad text-bg" },
-  cancelled_patient: { symbol: "⊘", label: "Cancelled by patient", className: "bg-warn-soft text-warn ring-1 ring-warn/50" },
-  cancelled_clinic: { symbol: "⊘", label: "Cancelled by clinic", className: "bg-surface-2 text-muted ring-1 ring-border" },
+  attended: { symbol: "✓", label: msg("Present"), className: "bg-ok text-bg" },
+  missed: { symbol: "✗", label: msg("Absent"), className: "bg-bad text-bg" },
+  cancelled_patient: { symbol: "⊘", label: msg("Cancelled by patient"), className: "bg-warn-soft text-warn ring-1 ring-warn/50" },
+  cancelled_clinic: { symbol: "⊘", label: msg("Cancelled by clinic"), className: "bg-surface-2 text-muted ring-1 ring-border" },
 };
 
-const WEEK_HEADER = ["M", "T", "W", "T", "F", "S", "S"];
 
 /**
  * A month view of one patient's visits: what happened on each day, what's
@@ -57,13 +58,19 @@ export function VisitCalendar({
   // "Cancel days" mode: tap several upcoming days, then cancel them together.
   const [selecting, setSelecting] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
+  const t = useT();
+  // Monday-first single letters in the physio's language; 1 Jan 2024 was a Monday.
+  const weekHeader = Array.from({ length: 7 }, (_, i) =>
+    new Intl.DateTimeFormat(t.intl, { weekday: "narrow", timeZone: "UTC" }).format(new Date(Date.UTC(2024, 0, i + 1))),
+  );
+  const fmt = (date: string) => t.day(date);
 
   const byDate = new Map(visits.map((v) => [v.date, v]));
   const bookingOn = new Map(bookings.filter((b) => b.status === "booked").map((b) => [b.date, b]));
   const earliest = [visits.map((v) => v.date).sort()[0], plans.map((p) => p.valid_from).sort()[0], today].filter(Boolean).sort()[0]!;
   const minMonth = earliest.slice(0, 7);
   const maxMonth = addMonths(today.slice(0, 7), 2);
-  const typeName = (id: string | null) => (id ? typeNames[id] : undefined) ?? "Session";
+  const typeName = (id: string | null) => (id ? typeNames[id] : undefined) ?? t("Session");
 
   function stateOf(date: string): DayState {
     const visit = byDate.get(date);
@@ -94,13 +101,13 @@ export function VisitCalendar({
     const cancelled = count((s) => s.kind === "visit" && s.visit.status.startsWith("cancelled"));
     const upcoming = count((s) => s.kind === "upcoming");
     const unmarked = count((s) => s.kind === "unmarked");
-    const label = new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${first}T00:00:00Z`));
+    const label = new Intl.DateTimeFormat(t.intl, { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${first}T00:00:00Z`));
 
     return (
       <div key={m} className={`space-y-2 ${className}`}>
         <p className="text-center text-base font-semibold">{label}</p>
         <div className="mx-auto grid max-w-sm grid-cols-7 gap-1 text-center">
-          {WEEK_HEADER.map((d, i) => (
+          {weekHeader.map((d, i) => (
             <span key={i} className="py-1 text-xs text-muted">
               {d}
             </span>
@@ -130,7 +137,7 @@ export function VisitCalendar({
                   type="button"
                   onClick={select}
                   title={`${look.label} · ${typeName(s.visit.visitTypeId)}`}
-                  aria-label={`${dayNum}: ${look.label}`}
+                  aria-label={`${dayNum}: ${t(look.label)}`}
                   className={`${base} font-semibold ${look.className}${ring}`}
                 >
                   {dayNum}
@@ -144,8 +151,8 @@ export function VisitCalendar({
                   key={d}
                   type="button"
                   onClick={select}
-                  title={describeOff(s.off)}
-                  aria-label={`${dayNum}: Cancelled in advance`}
+                  title={describeOff(s.off, t)}
+                  aria-label={`${dayNum}: ${t("Cancelled in advance")}`}
                   className={`${base} border-2 border-dashed border-border text-muted${ring}`}
                 >
                   <span className="line-through">{dayNum}</span>
@@ -154,7 +161,7 @@ export function VisitCalendar({
               );
             }
             if (s.kind === "upcoming" || s.kind === "unmarked") {
-              const what = s.kind === "upcoming" ? `Coming up${s.booked ? " (booked)" : ""}` : "Not marked";
+              const what = s.kind === "upcoming" ? (s.booked ? t("Coming up (booked)") : t("Coming up")) : t("Not marked");
               return (
                 <button
                   key={d}
@@ -184,11 +191,11 @@ export function VisitCalendar({
           })}
         </div>
         <p className="text-center text-sm text-muted">
-          {present} present
-          {absent > 0 && ` · ${absent} absent`}
-          {cancelled > 0 && ` · ${cancelled} cancelled`}
-          {upcoming > 0 && ` · ${upcoming} coming up`}
-          {unmarked > 0 && <span className="font-medium text-warn"> · {unmarked} not marked</span>}
+          {t("{n} present", { n: present })}
+          {absent > 0 && ` · ${t("{n} absent", { n: absent })}`}
+          {cancelled > 0 && ` · ${t("{n} cancelled", { n: cancelled })}`}
+          {upcoming > 0 && ` · ${t("{n} coming up", { n: upcoming })}`}
+          {unmarked > 0 && <span className="font-medium text-warn"> · {t("{n} not marked", { n: unmarked })}</span>}
         </p>
       </div>
     );
@@ -203,12 +210,12 @@ export function VisitCalendar({
           // On wide screens the left grid already shows the month before `month`.
           disabled={month <= minMonth}
           className="btn min-h-10 px-3"
-          aria-label="Previous month"
+          aria-label={t("Previous month")}
         >
           ‹
         </button>
         {selecting ? (
-          <span className="text-sm font-medium text-bad">Tap the days to cancel</span>
+          <span className="text-sm font-medium text-bad">{t("Tap the days to cancel")}</span>
         ) : (
           <button
             type="button"
@@ -218,7 +225,7 @@ export function VisitCalendar({
             }}
             className="btn min-h-10 px-3 text-sm"
           >
-            Cancel days…
+            {t("Cancel days…")}
           </button>
         )}
         <button
@@ -226,7 +233,7 @@ export function VisitCalendar({
           onClick={() => setMonth(addMonths(month, 1))}
           disabled={month >= maxMonth}
           className="btn min-h-10 px-3"
-          aria-label="Next month"
+          aria-label={t("Next month")}
         >
           ›
         </button>
@@ -240,7 +247,7 @@ export function VisitCalendar({
       {selecting && (
         <div className="flex items-center gap-2 rounded-2xl bg-bad-soft px-3 py-2">
           <span className="flex-1 text-sm text-bad">
-            {selected.length === 0 ? "No days picked yet" : `${selected.length} day${selected.length === 1 ? "" : "s"} picked`}
+            {selected.length === 0 ? t("No days picked yet") : selected.length === 1 ? t("1 day picked") : t("{n} days picked", { n: selected.length })}
           </span>
           <button
             type="button"
@@ -250,11 +257,11 @@ export function VisitCalendar({
             }}
             className="btn min-h-10 px-3 text-sm"
           >
-            Back
+            {t("Back")}
           </button>
           {selected.length > 0 && (
             <Link href={`/patients/${patientId}/cancel-days?dates=${selected.join(",")}`} className="btn min-h-10 border-bad bg-bad px-3 text-sm text-white">
-              Cancel {selected.length} day{selected.length === 1 ? "" : "s"}
+              {selected.length === 1 ? t("Cancel this day") : t("Cancel {n} days", { n: selected.length })}
             </Link>
           )}
         </div>
@@ -267,51 +274,51 @@ export function VisitCalendar({
             <span className="font-medium">{fmt(picked)}</span>
             <span className="block text-sm text-muted">
               {pickedState.kind === "visit"
-                ? `${LOOK[pickedState.visit.status].label} · ${typeName(pickedState.visit.visitTypeId)}${pickedState.visit.pain !== null ? ` · pain ${pickedState.visit.pain}/10` : ""}`
+                ? `${t(LOOK[pickedState.visit.status].label)} · ${typeName(pickedState.visit.visitTypeId)}${pickedState.visit.pain !== null ? ` · ${t("pain {n}/10", { n: pickedState.visit.pain })}` : ""}`
                 : pickedState.kind === "off"
-                  ? `${describeOff(pickedState.off)} · ${typeName(pickedState.visitTypeId)}`
+                  ? `${describeOff(pickedState.off, t)} · ${typeName(pickedState.visitTypeId)}`
                   : pickedState.kind === "upcoming"
-                  ? `${picked === today ? "Today · not marked yet" : pickedState.booked ? "Booked" : "Scheduled"} · ${typeName(pickedState.visitTypeId)}`
-                  : `Scheduled but not marked · ${typeName(pickedState.visitTypeId)}`}
+                    ? `${picked === today ? t("Today · not marked yet") : pickedState.booked ? t("Booked") : t("Scheduled")} · ${typeName(pickedState.visitTypeId)}`
+                    : `${t("Scheduled but not marked")} · ${typeName(pickedState.visitTypeId)}`}
             </span>
           </span>
           {pickedState.kind === "upcoming" && picked > today && (
             <Link href={`/patients/${patientId}/cancel-days?dates=${picked}`} className="btn shrink-0 text-bad">
-              Cancel this day
+              {t("Cancel this day")}
             </Link>
           )}
           {pickedState.kind === "off" &&
             (pickedState.off.patient_id && pickedState.off.from_date === pickedState.off.to_date ? (
               <form action={restorePatientDay.bind(null, pickedState.off.id, patientId)}>
                 <button type="submit" className="btn shrink-0">
-                  Restore
+                  {t("Restore")}
                 </button>
               </form>
             ) : (
               <Link href={pickedState.off.patient_id ? `/patients/${patientId}?tab=schedule` : "/profile/days-off"} className="btn shrink-0">
-                Manage
+                {t("Manage")}
               </Link>
             ))}
           {pickedState.kind === "visit" && (
             <Link href={`/patients/${patientId}/visits/${pickedState.visit.id}`} className="btn shrink-0">
-              Edit
+              {t("Edit")}
             </Link>
           )}
           {(pickedState.kind === "unmarked" || (pickedState.kind === "upcoming" && picked === today)) && (
             <Link href={`/patients/${patientId}/attendance?date=${picked}`} className="btn btn-primary shrink-0">
-              Mark it
+              {t("Mark it")}
             </Link>
           )}
         </div>
       )}
 
-      <ul className="flex flex-wrap justify-center gap-x-3 gap-y-1.5 text-xs text-muted" aria-label="Legend">
-        <Legend swatch="bg-ok text-bg" symbol="✓" label="Present" />
-        <Legend swatch="bg-bad text-bg" symbol="✗" label="Absent" />
-        <Legend swatch="bg-warn-soft text-warn ring-1 ring-warn/50" symbol="⊘" label="Cancelled" />
-        <Legend swatch="border-2 border-chart" symbol="○" label="Coming up" />
-        <Legend swatch="border-2 border-dashed border-warn text-warn" symbol="?" label="Not marked" />
-        <Legend swatch="border-2 border-dashed border-border text-muted" symbol="⊘" label="Cancelled in advance" />
+      <ul className="flex flex-wrap justify-center gap-x-3 gap-y-1.5 text-xs text-muted" aria-label={t("Legend")}>
+        <Legend swatch="bg-ok text-bg" symbol="✓" label={t("Present")} />
+        <Legend swatch="bg-bad text-bg" symbol="✗" label={t("Absent")} />
+        <Legend swatch="bg-warn-soft text-warn ring-1 ring-warn/50" symbol="⊘" label={t("Cancelled")} />
+        <Legend swatch="border-2 border-chart" symbol="○" label={t("Coming up")} />
+        <Legend swatch="border-2 border-dashed border-warn text-warn" symbol="?" label={t("Not marked")} />
+        <Legend swatch="border-2 border-dashed border-border text-muted" symbol="⊘" label={t("Cancelled in advance")} />
       </ul>
     </div>
   );
@@ -331,6 +338,3 @@ function addMonths(month: string, delta: number): string {
   return d.toISOString().slice(0, 7);
 }
 
-function fmt(date: string): string {
-  return new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(`${date}T00:00:00Z`));
-}

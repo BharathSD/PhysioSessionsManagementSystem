@@ -6,9 +6,11 @@ export function todayIn(timeZone: string): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date());
 }
 
-export function formatDate(isoDate: string): string {
+// `intl` is the language for month / weekday names ("hi-IN" → "3 अक्टू॰ 2026"); see makeT in src/i18n.
+
+export function formatDate(isoDate: string, intl = "en-IN"): string {
   // Dates are plain calendar days; parse as UTC so they never shift by a day.
-  return new Intl.DateTimeFormat("en-IN", {
+  return new Intl.DateTimeFormat(intl, {
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -17,14 +19,14 @@ export function formatDate(isoDate: string): string {
 }
 
 /** "Mon, 6 Oct" — for upcoming days, where the year is obvious. */
-export function formatDay(isoDate: string): string {
-  return new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(
+export function formatDay(isoDate: string, intl = "en-IN"): string {
+  return new Intl.DateTimeFormat(intl, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" }).format(
     new Date(`${isoDate}T00:00:00Z`),
   );
 }
 
-export function formatMoney(amount: number, currency = "INR"): string {
-  return new Intl.NumberFormat("en-IN", {
+export function formatMoney(amount: number, currency = "INR", intl = "en-IN"): string {
+  return new Intl.NumberFormat(intl, {
     style: "currency",
     currency,
     maximumFractionDigits: Number.isInteger(Number(amount)) ? 0 : 2,

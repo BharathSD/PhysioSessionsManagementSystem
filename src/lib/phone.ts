@@ -2,21 +2,20 @@ import { getCountries, getCountryCallingCode, parsePhoneNumberFromString, type C
 
 export type CountryOption = { code: CountryCode; name: string; dial: string; flag: string };
 
-const regionNames = new Intl.DisplayNames(["en"], { type: "region" });
-
 function flagOf(code: string): string {
   return String.fromCodePoint(...[...code].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
 }
 
-/** All countries, the clinic's own first, then alphabetical by name. */
-export function countryOptions(first: string): CountryOption[] {
+/** All countries, the clinic's own first, then alphabetical by name (named in `language`: "en", "hi"). */
+export function countryOptions(first: string, language = "en"): CountryOption[] {
+  const regionNames = new Intl.DisplayNames([language], { type: "region" });
   const all = getCountries().map((code) => ({
     code,
     name: regionNames.of(code) ?? code,
     dial: `+${getCountryCallingCode(code)}`,
     flag: flagOf(code),
   }));
-  all.sort((a, b) => (a.code === first ? -1 : b.code === first ? 1 : a.name.localeCompare(b.name)));
+  all.sort((a, b) => (a.code === first ? -1 : b.code === first ? 1 : a.name.localeCompare(b.name, language)));
   return all;
 }
 

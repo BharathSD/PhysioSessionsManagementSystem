@@ -4,7 +4,7 @@
 import type { getContext } from "./context";
 import { toSummary } from "./data";
 import { isOffFor, offOn, type DayOff } from "./days-off";
-import { formatDate } from "./format";
+import { getT } from "@/i18n/server";
 import { addDays, describePlan, flexibleProgress, isScheduledDay, nextVisit, planVisitType, type Plan } from "./schedule";
 import type { Appointment, PatientSummary, Session } from "./types";
 
@@ -22,9 +22,11 @@ export type BoardRow = {
   off?: DayOff;
 };
 
-export async function getBoard({ supabase }: Ctx, date: string, search = "") {
+/** `physioId`: only that physio's patients (the "My patients" filter in a clinic team). */
+export async function getBoard({ supabase }: Ctx, date: string, search = "", physioId?: string) {
   let patientsQuery = supabase.from("patient_summary").select("*").eq("archived", false).order("name");
   if (search) patientsQuery = patientsQuery.ilike("name", `%${search}%`);
+  if (physioId) patientsQuery = patientsQuery.eq("physio_id", physioId);
 
   const [{ data: rows, error }, { data: sessions }, { data: plans }, { data: bookings }, { data: recent }, { data: offs }] = await Promise.all([
     patientsQuery,
@@ -38,6 +40,7 @@ export async function getBoard({ supabase }: Ctx, date: string, search = "") {
   ]);
   const daysOff = (offs ?? []) as DayOff[];
   if (error) throw new Error(error.message);
+  const t = await getT();
 
   const marked = new Map<string, Session>();
   for (const s of (sessions ?? []) as Session[]) marked.set(s.patient_id, s);
@@ -61,17 +64,19 @@ export async function getBoard({ supabase }: Ctx, date: string, search = "") {
 
     if (bookedToday) {
       row.visitTypeId = bookedToday.visit_type_id ?? row.visitTypeId;
-      row.expected = { kind: "booked", label: `Booked on ${formatDate(bookedToday.booked_on)}` };
+      row.expected = { kind: "booked", label: t("Booked on {date}", { date: t.date(bookedToday.booked_on) }) };
     } else if (plan && isScheduledDay(plan, date)) {
-      row.expected = { kind: "fixed", label: describePlan(plan) };
+      row.expected = { kind: "fixed", label: describePlan(plan, t) };
     } else if (plan?.mode === "flexible") {
       const dates = (attendedOf.get(p.id) ?? []).map((s) => s.session_date as string).filter((d) => d <= date);
       // Expected if still short *before* this day; the label counts this day's visit too.
       const before = flexibleProgress(plan, date, dates.filter((d) => d < date));
       if (before.done < before.target) {
         const { done, target } = flexibleProgress(plan, date, dates);
-        const when = plan.every_n_weeks === 1 ? "this week" : "this period";
-        row.expected = { kind: "flexible", label: `${done} of ${target} done ${when}` };
+        row.expected = {
+          kind: "flexible",
+          label: plan.every_n_weeks === 1 ? t("{done} of {target} done this week", { done, target }) : t("{done} of {target} done this period", { done, target }),
+        };
       }
     }
     return row;

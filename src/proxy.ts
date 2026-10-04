@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/auth", "/forgot-password"];
+const PUBLIC_PATHS = ["/login", "/auth", "/forgot-password", "/join"];
 
 // Refreshes the Supabase session cookie on every navigation and sends
 // signed-out visitors to /login. Real authorization is enforced by RLS.
@@ -48,6 +48,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|icons/|.*\\.(?:png|svg|ico|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|manifest.webmanifest|sw.js|offline.html|icons/|.*\\.(?:png|svg|ico|webp)$).*)",
   ],
 };

@@ -3,16 +3,19 @@
 import { useState } from "react";
 import { WEEKDAYS } from "@/lib/schedule";
 import type { VisitType } from "@/lib/types";
+import { msg } from "@/i18n";
+import { useT } from "@/i18n/client";
 import { DateField } from "./date-field";
 
 type Mode = "none" | "fixed_days" | "flexible";
 
-const PRESETS: { label: string; mode: Mode; days?: number[]; k?: number; n: number }[] = [
-  { label: "Mon / Wed / Fri", mode: "fixed_days", days: [1, 3, 5], n: 1 },
-  { label: "Tue / Thu / Sat", mode: "fixed_days", days: [2, 4, 6], n: 1 },
-  { label: "Twice a week", mode: "flexible", k: 2, n: 1 },
-  { label: "Once a week", mode: "flexible", k: 1, n: 1 },
-  { label: "Every 2 weeks", mode: "flexible", k: 1, n: 2 },
+// Fixed-day presets are labelled with the weekday names ("Mon / Wed / Fri").
+const PRESETS: { label?: string; mode: Mode; days?: number[]; k?: number; n: number }[] = [
+  { mode: "fixed_days", days: [1, 3, 5], n: 1 },
+  { mode: "fixed_days", days: [2, 4, 6], n: 1 },
+  { label: msg("Twice a week"), mode: "flexible", k: 2, n: 1 },
+  { label: msg("Once a week"), mode: "flexible", k: 1, n: 1 },
+  { label: msg("Every 2 weeks"), mode: "flexible", k: 1, n: 2 },
 ];
 
 /**
@@ -37,22 +40,24 @@ export function PlanFields({
   const [days, setDays] = useState<number[]>([]);
   const [k, setK] = useState(2);
   const [n, setN] = useState(1);
+  const t = useT();
+  const presetLabel = (p: (typeof PRESETS)[number]) => (p.label ? t(p.label) : p.days!.map((d) => t.weekday(d)).join(" / "));
 
   const modes: { value: Mode; label: string }[] = [
-    ...(allowNone ? [{ value: "none" as const, label: "No schedule" }] : []),
-    { value: "fixed_days", label: "Fixed days" },
-    { value: "flexible", label: "Any days" },
+    ...(allowNone ? [{ value: "none" as const, label: t("No schedule") }] : []),
+    { value: "fixed_days", label: t("Fixed days") },
+    { value: "flexible", label: t("Any days") },
   ];
 
   return (
     <div className="space-y-3">
       <input type="hidden" name="plan_mode" value={mode} />
 
-      <p className="text-sm font-medium text-muted">Quick choices</p>
+      <p className="text-sm font-medium text-muted">{t("Quick choices")}</p>
       <div className="-mt-1 flex flex-wrap gap-2">
         {PRESETS.map((p) => (
           <button
-            key={p.label}
+            key={presetLabel(p)}
             type="button"
             onClick={() => {
               setMode(p.mode);
@@ -62,7 +67,7 @@ export function PlanFields({
             }}
             className="rounded-full border border-border px-3.5 py-2 text-sm font-medium text-fg hover:border-brand hover:text-brand"
           >
-            {p.label}
+            {presetLabel(p)}
           </button>
         ))}
       </div>
@@ -83,7 +88,7 @@ export function PlanFields({
 
       {mode === "fixed_days" && (
         <fieldset className="space-y-3">
-          <legend className="mb-1.5 text-base font-medium">Which days?</legend>
+          <legend className="mb-1.5 text-base font-medium">{t("Which days?")}</legend>
           <div className="grid grid-cols-7 gap-1">
             {WEEKDAYS.map((w) => {
               const on = days.includes(w.n);
@@ -102,7 +107,7 @@ export function PlanFields({
                     onChange={() => setDays((d) => (on ? d.filter((x) => x !== w.n) : [...d, w.n]))}
                     className="sr-only"
                   />
-                  {w.short.slice(0, 2)}
+                  {t.locale === "en" ? w.short.slice(0, 2) : t.weekday(w.n)}
                 </label>
               );
             })}
@@ -111,34 +116,34 @@ export function PlanFields({
             <div className="rounded-2xl bg-surface-2 p-3">
               <label className="flex cursor-pointer items-center gap-3 text-base font-medium">
                 <input type="checkbox" checked={mixed} onChange={(e) => setMixed(e.target.checked)} className="size-5 accent-[var(--brand)]" />
-                Different visit type on some days
+                {t("Different visit type on some days")}
               </label>
               {mixed && (
                 <div className="mt-3 space-y-2">
                   {WEEKDAYS.filter((w) => days.includes(w.n)).map((w) => (
                     <label key={w.n} className="field flex-row items-center gap-3">
-                      <span className="w-10 shrink-0">{w.short}</span>
+                      <span className="w-10 shrink-0">{t.weekday(w.n)}</span>
                       <select name={`day_type_${w.n}`} defaultValue={planType}>
-                        {types.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name}
+                        {types.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.name}
                           </option>
                         ))}
                       </select>
                     </label>
                   ))}
-                  <p className="text-sm text-muted">e.g. Mon & Wed in clinic, Sat as a home visit.</p>
+                  <p className="text-sm text-muted">{t("e.g. Mon & Wed in clinic, Sat as a home visit.")}</p>
                 </div>
               )}
             </div>
           )}
           <label className="field">
-            <span>Repeat</span>
+            <span>{t("Repeat")}</span>
             <select name="every_n_weeks" value={n} onChange={(e) => setN(+e.target.value)}>
-              <option value={1}>Every week</option>
-              <option value={2}>Every 2 weeks (alternate weeks)</option>
-              <option value={3}>Every 3 weeks</option>
-              <option value={4}>Every 4 weeks</option>
+              <option value={1}>{t("Every week")}</option>
+              <option value={2}>{t("Every 2 weeks (alternate weeks)")}</option>
+              <option value={3}>{t("Every {n} weeks", { n: 3 })}</option>
+              <option value={4}>{t("Every {n} weeks", { n: 4 })}</option>
             </select>
           </label>
         </fieldset>
@@ -147,19 +152,21 @@ export function PlanFields({
       {mode === "flexible" && (
         <div className="grid grid-cols-2 gap-3">
           <label className="field">
-            <span>Sessions</span>
+            <span>{t("Sessions")}</span>
             <input name="sessions_per_period" type="number" inputMode="numeric" min={1} max={14} value={k} onChange={(e) => setK(+e.target.value)} />
           </label>
           <label className="field">
-            <span>Every</span>
+            <span>{t("Every")}</span>
             <select name="every_n_weeks" value={n} onChange={(e) => setN(+e.target.value)}>
-              <option value={1}>1 week</option>
-              <option value={2}>2 weeks</option>
-              <option value={3}>3 weeks</option>
-              <option value={4}>4 weeks</option>
+              <option value={1}>{t("1 week")}</option>
+              {[2, 3, 4].map((w) => (
+                <option key={w} value={w}>
+                  {t("{n} weeks", { n: w })}
+                </option>
+              ))}
             </select>
           </label>
-          <p className="col-span-2 -mt-1 text-sm text-muted">The patient picks the days — e.g. 2 sessions every 1 week = twice a week.</p>
+          <p className="col-span-2 -mt-1 text-sm text-muted">{t("The patient picks the days — e.g. 2 sessions every 1 week = twice a week.")}</p>
         </div>
       )}
 
@@ -167,20 +174,22 @@ export function PlanFields({
         <>
           {types.length > 0 && (
             <label className="field">
-              <span>{mode === "fixed_days" && mixed ? "Main visit type" : "Visit type"}</span>
+              <span>{mode === "fixed_days" && mixed ? t("Main visit type") : t("Visit type")}</span>
               <select name="plan_visit_type" value={planType} onChange={(e) => setPlanType(e.target.value)}>
-                {types.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
+                {types.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
                   </option>
                 ))}
               </select>
             </label>
           )}
-          <DateField name="plan_from" label="Starts on" today={today} defaultValue={today} shortcuts={["today", "tomorrow"]} required />
+          <DateField name="plan_from" label={t("Starts on")} today={today} defaultValue={today} shortcuts={["today", "tomorrow"]} required />
           <label className="field">
-            <span>Note <em>(optional)</em></span>
-            <input name="plan_note" placeholder="e.g. Phase 2 – strengthening" />
+            <span>
+              {t("Note")} <em>{t("(optional)")}</em>
+            </span>
+            <input name="plan_note" placeholder={t("e.g. Phase 2 – strengthening")} />
           </label>
         </>
       )}

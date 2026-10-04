@@ -8,10 +8,13 @@ import { ActionTile, PageHeader, SectionTitle } from "@/components/ui";
 import { VisitCost } from "@/components/visit-cost";
 import { getBilling, packageSlots } from "@/lib/billing";
 import { getContext } from "@/lib/context";
+import { getTeam } from "@/lib/team";
 import { patientName, physioName } from "@/lib/names";
 import { firstParam } from "@/lib/data";
 import { canChargeMiss, patientFee, standardFee } from "@/lib/fees";
-import { formatDate, formatDay, formatMoney, todayIn, whatsappLink } from "@/lib/format";
+import { todayIn, whatsappLink } from "@/lib/format";
+import { msg } from "@/i18n";
+import { getT } from "@/i18n/server";
 import { paymentReceipt, sessionReceipt, statement } from "@/lib/messages";
 import { DETAIL_COLUMNS, loadPatient } from "@/lib/patient";
 import { formatPhone } from "@/lib/phone";
@@ -25,11 +28,11 @@ import { restorePatientDay } from "../../actions";
 import { deleteCharge, deletePackage, deletePayment, deleteSession, endPlan, markToday } from "../../actions";
 
 const TABS = [
-  { key: "overview", label: "Overview" },
-  { key: "history", label: "History" },
-  { key: "visits", label: "Visits" },
-  { key: "account", label: "Account" },
-  { key: "schedule", label: "Schedule" },
+  { key: "overview", label: msg("Overview") },
+  { key: "history", label: msg("History") },
+  { key: "visits", label: msg("Visits") },
+  { key: "account", label: msg("Account") },
+  { key: "schedule", label: msg("Schedule") },
 ] as const;
 type Tab = (typeof TABS)[number]["key"];
 
@@ -48,15 +51,21 @@ type LedgerRow = {
 
 export default async function PatientPage(props: PageProps<"/patients/[id]">) {
   const [{ id }, sp] = await Promise.all([props.params, props.searchParams]);
-  const tab = (TABS.find((t) => t.key === firstParam(sp.tab))?.key ?? "overview") as Tab;
+  const tab = (TABS.find((x) => x.key === firstParam(sp.tab))?.key ?? "overview") as Tab;
 
   const ctx = await getContext();
   const { supabase, clinic, member } = ctx;
   const today = todayIn(clinic.timezone);
   const p = await loadPatient(ctx, id);
+  const team = await getTeam();
+  const t = await getT();
+  const formatDate = (d: string) => t.date(d);
+  const formatDay = (d: string) => t.day(d);
+  /** "by Dr. Kiran" in a clinic team; nothing for a solo physio. */
+  const by = (userId: string | null | undefined) => (team.isTeam && userId ? t("by {name}", { name: team.nameOf(userId) ?? "" }) : "");
 
   const [
-    { activeTypes, visitTypes, rates, typeName },
+    { activeTypes, visitTypes, rates, typeName, savedTypeName },
     slots,
     { data: sessions },
     { data: payments },
@@ -151,10 +160,11 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
           makeup,
           nextVisit(plan, upcoming.map((a) => a.scheduled_date), notifyRanges.at(-1)!.to, isOff),
           { clinic, physioName: physioName(member) },
+          p.language,
         )
       : null;
   const sender = { clinic, physioName: physioName(member) };
-  const money = (n: number) => formatMoney(n, clinic.currency);
+  const money = (n: number) => t.money(n, clinic.currency);
   const base = `/patients/${p.id}`;
   const remainingOf = new Map(slots.map((s) => [s.id, s.remaining]));
 
@@ -163,10 +173,10 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
     if (pl.mode !== "fixed_days" || Object.keys(pl.day_visit_types ?? {}).length === 0) return typeName(pl.visit_type_id);
     const groups = new Map<string, string[]>();
     for (const d of pl.weekdays) {
-      const t = typeName(pl.day_visit_types[String(d)] ?? pl.visit_type_id);
-      groups.set(t, [...(groups.get(t) ?? []), WEEKDAYS[d - 1].short]);
+      const type = typeName(pl.day_visit_types[String(d)] ?? pl.visit_type_id);
+      groups.set(type, [...(groups.get(type) ?? []), t.weekday(WEEKDAYS[d - 1].n)]);
     }
-    return [...groups].map(([t, days]) => `${days.join(", ")}: ${t}`).join(" · ");
+    return [...groups].map(([type, days]) => `${days.join(", ")}: ${type}`).join(" · ");
   };
 
   // Account ledger: everything that changes the balance, oldest first, with a running balance.
@@ -175,15 +185,15 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
       key: `pk${pkg.id}`,
       date: pkg.start_date,
       order: 0,
-      label: `Package: ${pkg.title}`,
-      detail: `${pkg.total_sessions} × ${pkg.visit_type_id ? typeName(pkg.visit_type_id) : "any visit type"} · ${remainingOf.get(pkg.id) ?? 0} left${
-        pkg.sessions_used_before > 0 ? ` · ${pkg.sessions_used_before} done before app` : ""
+      label: t("Package: {title}", { title: pkg.title }),
+      detail: `${pkg.total_sessions} × ${pkg.visit_type_id ? typeName(pkg.visit_type_id) : t("any visit type")} · ${t("{n} left", { n: remainingOf.get(pkg.id) ?? 0 })}${
+        pkg.sessions_used_before > 0 ? ` · ${t("{n} done before app", { n: pkg.sessions_used_before })}` : ""
       }`,
       amount: Number(pkg.price),
       remove: (
         <form action={deletePackage.bind(null, pkg.id)}>
-          <ConfirmButton className="text-xs text-muted underline" confirmText="Remove package?">
-            Remove
+          <ConfirmButton className="text-xs text-muted underline" confirmText={t("Remove package?")}>
+            {t("Remove")}
           </ConfirmButton>
         </form>
       ),
@@ -195,7 +205,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
         date: v.session_date,
         order: 1,
         label: typeName(v.visit_type_id),
-        detail: v.status === "attended" ? "Visit fee" : `${STATUS[v.status].label} — fee`,
+        detail: v.status === "attended" ? t("Visit fee") : t("{status} — fee", { status: t(STATUS[v.status].label) }),
         amount: Number(v.charge),
       })),
     ...charges.map((c) => ({
@@ -203,12 +213,12 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
       date: c.charge_date,
       order: 2,
       label: c.description,
-      detail: c.amount < 0 ? "Discount" : "Extra charge",
+      detail: c.amount < 0 ? t("Discount") : t("Extra charge"),
       amount: Number(c.amount),
       remove: (
         <form action={deleteCharge.bind(null, c.id)}>
-          <ConfirmButton className="text-xs text-muted underline" confirmText="Remove?">
-            Remove
+          <ConfirmButton className="text-xs text-muted underline" confirmText={t("Remove?")}>
+            {t("Remove")}
           </ConfirmButton>
         </form>
       ),
@@ -217,14 +227,14 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
       key: `p${pay.id}`,
       date: pay.paid_on,
       order: 3,
-      label: `Payment · ${pay.method.toUpperCase()}`,
-      detail: pay.note ?? undefined,
+      label: t("Payment · {method}", { method: pay.method.toUpperCase() }),
+      detail: [pay.note, by(pay.recorded_by)].filter(Boolean).join(" · ") || undefined,
       amount: -Number(pay.amount),
       receipt: p.phone ? whatsappLink(p.phone, paymentReceipt(p, pay, sender)) : undefined,
       remove: (
         <form action={deletePayment.bind(null, pay.id)}>
-          <ConfirmButton className="text-xs text-muted underline" confirmText="Remove payment?">
-            Remove
+          <ConfirmButton className="text-xs text-muted underline" confirmText={t("Remove payment?")}>
+            {t("Remove")}
           </ConfirmButton>
         </form>
       ),
@@ -238,17 +248,25 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
   return (
     <div>
       <PageHeader
-        back={{ href: "/patients", label: "Patients" }}
+        back={{ href: "/patients", label: t("Patients") }}
         title={
           <>
             {patientName(p)}
-            {p.archived && <span className="chip ml-2 bg-surface-2 align-middle text-sm text-muted">Archived</span>}
+            {p.archived && <span className="chip ml-2 bg-surface-2 align-middle text-sm text-muted">{t("Archived")}</span>}
           </>
         }
-        subtitle={[p.condition, p.default_visit_type_id ? `Usually: ${typeName(p.default_visit_type_id)}` : null].filter(Boolean).join(" · ") || undefined}
+        subtitle={
+          [
+            p.condition,
+            p.default_visit_type_id ? t("Usually: {type}", { type: typeName(p.default_visit_type_id) }) : null,
+            team.isTeam && p.physio_id ? team.nameOf(p.physio_id) : null,
+          ]
+            .filter(Boolean)
+            .join(" · ") || undefined
+        }
         action={
           <Link href={`${base}/edit`} className="btn shrink-0">
-            <Icon name="edit" className="size-4" /> Edit
+            <Icon name="edit" className="size-4" /> {t("Edit")}
           </Link>
         }
       />
@@ -258,7 +276,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
         {p.phone ? (
           <>
             <a href={`tel:${p.phone}`} className="btn">
-              <Icon name="phone" className="size-4" /> Call
+              <Icon name="phone" className="size-4" /> {t("Call")}
             </a>
             <a href={whatsappLink(p.phone, "")} target="_blank" rel="noopener noreferrer" className="btn">
               <Icon name="message" className="size-4" /> WhatsApp
@@ -267,7 +285,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
           </>
         ) : (
           <Link href={`${base}/edit`} className="btn text-muted">
-            <Icon name="plus" className="size-4" /> Add phone number
+            <Icon name="plus" className="size-4" /> {t("Add phone number")}
           </Link>
         )}
       </div>
@@ -279,7 +297,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
           rel="noopener noreferrer"
           className="btn btn-whatsapp mb-3 w-full text-base"
         >
-          <Icon name="message" /> Let {p.name.split(" ")[0]} know on WhatsApp
+          <Icon name="message" /> {t("Let {name} know on WhatsApp", { name: p.name.split(" ")[0] })}
         </a>
       )}
 
@@ -287,8 +305,8 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
         <div role="note" className="mb-3 flex items-start gap-3 rounded-2xl border border-bad/40 bg-bad-soft p-3 text-base">
           <Icon name="alert" className="mt-0.5 size-5 shrink-0 text-bad" />
           <div>
-            <p className="text-sm font-semibold text-bad">Red flags</p>
-            <p>{redFlags.join(" · ")}</p>
+            <p className="text-sm font-semibold text-bad">{t("Red flags")}</p>
+            <p>{redFlags.map((f) => t(f)).join(" · ")}</p>
           </div>
         </div>
       )}
@@ -298,7 +316,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
         <div role="note" className="mb-3 flex items-start gap-3 rounded-2xl border border-warn/40 bg-warn-soft p-3 text-base">
           <Icon name="alert" className="mt-0.5 size-5 shrink-0 text-warn" />
           <div>
-            <p className="text-sm font-semibold text-warn">Precautions</p>
+            <p className="text-sm font-semibold text-warn">{t("Precautions")}</p>
             <p className="whitespace-pre-line">{details.precautions}</p>
           </div>
         </div>
@@ -310,70 +328,66 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
           <div>
             {p.sessions_bought > 0 ? (
               <>
-                <p className="text-sm text-muted">Package sessions left</p>
+                <p className="text-sm text-muted">{t("Package sessions left")}</p>
                 <p className={`text-4xl font-semibold ${p.sessions_left <= 1 ? "text-warn" : ""}`}>{p.sessions_left}</p>
-                <p className="text-sm text-muted">
-                  {p.sessions_used} of {p.sessions_bought} used
-                </p>
+                <p className="text-sm text-muted">{t("{used} of {total} used", { used: p.sessions_used, total: p.sessions_bought })}</p>
               </>
             ) : (
               <>
-                <p className="text-sm text-muted">Visits so far</p>
+                <p className="text-sm text-muted">{t("Visits so far")}</p>
                 <p className="text-4xl font-semibold">{p.visits}</p>
-                <p className="text-sm text-muted">Pay per visit</p>
+                <p className="text-sm text-muted">{t("Pay per visit")}</p>
               </>
             )}
           </div>
           <div>
-            <p className="text-sm text-muted">{p.amount_due < 0 ? "Paid in advance" : "Money due"}</p>
+            <p className="text-sm text-muted">{p.amount_due < 0 ? t("Paid in advance") : t("Money due")}</p>
             {p.amount_due > 0 ? (
               <p className="text-4xl font-semibold text-bad">{money(p.amount_due)}</p>
             ) : p.amount_due < 0 ? (
               <p className="text-4xl font-semibold text-ok">{money(-p.amount_due)}</p>
             ) : (
               <p className="flex items-center gap-1.5 pt-1.5 text-xl font-semibold text-ok">
-                <Icon name="check" /> All paid
+                <Icon name="check" /> {t("All paid")}
               </p>
             )}
-            <p className="text-sm text-muted">
-              {money(p.amount_paid)} paid of {money(p.amount_billed)}
-            </p>
+            <p className="text-sm text-muted">{t("{paid} paid of {billed}", { paid: money(p.amount_paid), billed: money(p.amount_billed) })}</p>
           </div>
         </div>
         <SessionDots used={Math.min(p.sessions_used, p.sessions_bought)} total={p.sessions_bought} />
         <div className="flex items-start justify-between gap-3 border-t border-border pt-3 text-sm">
           <span>
-            <span className="text-muted">Fees: </span>
+            <span className="text-muted">{t("Fees:")} </span>
             {activeTypes
-              .map((t) => {
-                const own = patientFee(rates, p.id, "visit", t.id, today);
-                const fee = typeof own === "number" ? own : standardFee(rates, "visit", t.id, today);
+              .map((v) => {
+                const own = patientFee(rates, p.id, "visit", v.id, today);
+                const fee = typeof own === "number" ? own : standardFee(rates, "visit", v.id, today);
                 return fee === null ? null : (
-                  <span key={t.id} className="font-medium">
-                    {t.name.replace(/ session$/, "")} {money(fee)}
-                    {typeof own === "number" && <span className="font-normal text-brand"> (own)</span>}
+                  <span key={v.id} className="font-medium">
+                    {v.name.replace(/ session$/, "")} {money(fee)}
+                    {typeof own === "number" && <span className="font-normal text-brand"> {t("(own)")}</span>}
                   </span>
                 );
               })
               .filter(Boolean)
               .flatMap((el, i) => (i === 0 ? [el] : [<span key={`sep${i}`} className="text-muted"> · </span>, el]))}
-            {activeTypes.every((t) => standardFee(rates, "visit", t.id, today) === null && typeof patientFee(rates, p.id, "visit", t.id, today) !== "number") && (
-              <span className="text-muted">not set</span>
+            {activeTypes.every((v) => standardFee(rates, "visit", v.id, today) === null && typeof patientFee(rates, p.id, "visit", v.id, today) !== "number") && (
+              <span className="text-muted">{t("not set")}</span>
             )}
           </span>
           <Link href={`${base}/fees`} className="shrink-0 font-medium text-brand">
-            Edit fees
+            {t("Edit fees")}
           </Link>
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
           <span>
-            <span className="text-muted">Schedule: </span>
-            <span className="font-medium">{plan ? describePlan(plan) : "None"}</span>
+            <span className="text-muted">{t("Schedule:")} </span>
+            <span className="font-medium">{plan ? describePlan(plan, t) : t("None")}</span>
           </span>
           {nextShown && (
             <span>
-              <span className="text-muted">Next: </span>
-              <span className="font-medium">{nextShown === today ? "Today" : formatDay(nextShown)}</span>
+              <span className="text-muted">{t("Next:")} </span>
+              <span className="font-medium">{nextShown === today ? t("Today") : formatDay(nextShown)}</span>
             </span>
           )}
         </div>
@@ -386,7 +400,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
             <div className="flex flex-wrap items-center gap-2">
               <span className={`chip gap-1 py-1.5 text-sm ${STATUS[todaySession.status].className}`}>
                 <Icon name={STATUS[todaySession.status].icon} className="size-4" />
-                {STATUS[todaySession.status].label} today
+                {t("{status} today", { status: t(STATUS[todaySession.status].label) })}
               </span>
               <VisitCost
                 session={todaySession}
@@ -405,23 +419,23 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
               <>
                 <QuickPain sessionId={todaySession.id} score={todaySession.pain_score} editHref={`${base}/visits/${todaySession.id}`} />
                 <Link href={`${base}/visits/${todaySession.id}/record`} className="btn w-full text-base">
-                  <Icon name="edit" /> {doneIn.has(todaySession.id) || todaySession.notes ? "Edit exercises & notes" : "Add exercises & notes"}
+                  <Icon name="edit" /> {doneIn.has(todaySession.id) || todaySession.notes ? t("Edit exercises & notes") : t("Add exercises & notes")}
                 </Link>
               </>
             )}
             <div className="flex gap-2">
               {p.phone && (
                 <a
-                  href={whatsappLink(p.phone, sessionReceipt(p, todaySession, sender, next, typeName(todaySession.visit_type_id)))}
+                  href={whatsappLink(p.phone, sessionReceipt(p, todaySession, sender, next, savedTypeName(todaySession.visit_type_id)))}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="btn btn-whatsapp flex-1 text-base"
                 >
-                  <Icon name="message" /> Send receipt
+                  <Icon name="message" /> {t("Send receipt")}
                 </a>
               )}
               <form action={deleteSession.bind(null, todaySession.id)}>
-                <SubmitButton className="btn text-muted">Undo</SubmitButton>
+                <SubmitButton className="btn text-muted">{t("Undo")}</SubmitButton>
               </form>
             </div>
           </div>
@@ -430,26 +444,26 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
             {offToday && (
               <p className="mb-2.5 flex flex-wrap items-center gap-2 rounded-xl bg-surface-2 px-3 py-2 text-sm">
                 <Icon name="ban" className="size-4 text-muted" />
-                <span className="flex-1">Off today — {describeOff(offToday)}. You can still mark them if they come.</span>
+                <span className="flex-1">{t("Off today — {why}. You can still mark them if they come.", { why: describeOff(offToday, t) })}</span>
               </p>
             )}
             <p className="mb-2.5 text-base font-medium">
-              Today&apos;s attendance <span className="font-normal text-muted">· {typeName(todayType)}</span>
+              {t("Today's attendance")} <span className="font-normal text-muted">· {typeName(todayType)}</span>
             </p>
             <div className="grid grid-cols-[1fr_2fr] gap-2">
               <form action={markToday.bind(null, p.id, "missed", todayType)}>
                 <SubmitButton className="btn btn-bad w-full text-base">
-                  <Icon name="x" /> Absent
+                  <Icon name="x" /> {t("Absent")}
                 </SubmitButton>
               </form>
               <form action={markToday.bind(null, p.id, "attended", todayType)}>
                 <SubmitButton className="btn btn-ok w-full text-base">
-                  <Icon name="check" /> Present
+                  <Icon name="check" /> {t("Present")}
                 </SubmitButton>
               </form>
             </div>
             <Link href={`${base}/attendance`} className="mt-2 flex min-h-10 items-center justify-center gap-1 text-sm font-medium text-brand">
-              Cancelled, rescheduled or different visit type?
+              {t("Cancelled, rescheduled or different visit type?")}
               <Icon name="chevron" className="size-4" />
             </Link>
           </>
@@ -458,25 +472,25 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
 
       {/* Main actions */}
       <div className="mt-3 grid grid-cols-3 gap-2.5">
-        <ActionTile href={`${base}/payment`} icon="rupee" label="Record payment" />
-        <ActionTile href={`${base}/book`} icon="calendar" label="Book session" />
-        <ActionTile href={`${base}/schedule`} icon="repeat" label={plan ? "Change schedule" : "Set schedule"} />
+        <ActionTile href={`${base}/payment`} icon="rupee" label={t("Record payment")} />
+        <ActionTile href={`${base}/book`} icon="calendar" label={t("Book session")} />
+        <ActionTile href={`${base}/schedule`} icon="repeat" label={plan ? t("Change schedule") : t("Set schedule")} />
       </div>
 
       {/* Tabs */}
-      <nav className="-mx-4 mt-6 flex overflow-x-auto border-b border-border px-4 md:mx-0 md:px-0" aria-label="Patient sections">
-        {TABS.map((t) => (
+      <nav className="-mx-4 mt-6 flex overflow-x-auto border-b border-border px-4 md:mx-0 md:px-0" aria-label={t("Patient sections")}>
+        {TABS.map((x) => (
           <Link
-            key={t.key}
-            href={t.key === "overview" ? base : `${base}?tab=${t.key}`}
+            key={x.key}
+            href={x.key === "overview" ? base : `${base}?tab=${x.key}`}
             replace
             scroll={false}
-            aria-current={tab === t.key ? "page" : undefined}
+            aria-current={tab === x.key ? "page" : undefined}
             className={`-mb-px shrink-0 border-b-2 px-4 py-3 text-base font-medium ${
-              tab === t.key ? "border-brand text-brand" : "border-transparent text-muted"
+              tab === x.key ? "border-brand text-brand" : "border-transparent text-muted"
             }`}
           >
-            {t.label}
+            {t(x.label)}
           </Link>
         ))}
       </nav>
@@ -500,9 +514,10 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
             currency={clinic.currency}
             clinicCountry={clinic.country}
             typeName={typeName}
-            typeNames={Object.fromEntries(visitTypes.map((t) => [t.id, t.name]))}
-            summaryLink={p.phone ? whatsappLink(p.phone, statement(p, visits, sender, typeName)) : null}
+            typeNames={Object.fromEntries(visitTypes.map((v) => [v.id, v.name]))}
+            summaryLink={p.phone ? whatsappLink(p.phone, statement(p, visits, sender, savedTypeName)) : null}
             base={base}
+            t={t}
             daysOff={daysOff}
             activeCases={cases.filter((cs) => cs.status === "active")}
           />
@@ -511,12 +526,12 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
         {tab === "history" && (
           <>
             <Link href={`${base}/cases/new`} className="btn btn-primary mt-4 w-full text-base">
-              <Icon name="plus" /> New case
+              <Icon name="plus" /> {t("New case")}
             </Link>
-            <SectionTitle aside={cases.length ? `${cases.length} case${cases.length === 1 ? "" : "s"}` : undefined}>Cases</SectionTitle>
+            <SectionTitle aside={cases.length ? (cases.length === 1 ? t("1 case") : t("{n} cases", { n: cases.length })) : undefined}>{t("Cases")}</SectionTitle>
             {cases.length === 0 ? (
               <p className="card text-base text-muted">
-                No case history yet. Open a case to record the initial assessment, pain, what&apos;s done each session and the outcome.
+                {t("No case history yet. Open a case to record the initial assessment, pain, what's done each session and the outcome.")}
               </p>
             ) : (
               <ul className="space-y-2.5">
@@ -529,9 +544,9 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
                           <span className="block text-lg font-semibold">{cs.title}</span>
                           <span className="block text-sm text-muted">
                             <span className={`chip mr-1.5 ${cs.status === "active" ? "bg-ok-soft text-ok" : "bg-surface-2 text-muted"}`}>
-                              {cs.status === "active" ? "Active" : "Discharged"}
+                              {cs.status === "active" ? t("Active") : t("Discharged")}
                             </span>
-                            {formatDate(cs.opened_on)} – {cs.closed_on ? formatDate(cs.closed_on) : "now"}
+                            {formatDate(cs.opened_on)} – {cs.closed_on ? formatDate(cs.closed_on) : t("now")}
                           </span>
                           {cs.diagnosis && <span className="mt-1 block truncate text-sm">{cs.diagnosis}</span>}
                         </span>
@@ -547,26 +562,31 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
         {tab === "visits" && (
           <>
             <Link href={`${base}/past-sessions`} className="btn mt-4 w-full text-base">
-              <Icon name="history" /> Add past sessions
+              <Icon name="history" /> {t("Add past sessions")}
             </Link>
-            <SectionTitle aside={`${p.visits} attended`}>All visits</SectionTitle>
+            <SectionTitle aside={t("{n} attended", { n: p.visits })}>{t("All visits")}</SectionTitle>
             {p.sessions_prior > 0 && (
               <p className="mb-2 rounded-2xl bg-surface-2 px-4 py-3 text-base text-muted">
-                + {p.sessions_prior} earlier session{p.sessions_prior === 1 ? "" : "s"} from before the app (no dates)
+                {p.sessions_prior === 1
+                  ? t("+ 1 earlier session from before the app (no dates)")
+                  : t("+ {n} earlier sessions from before the app (no dates)", { n: p.sessions_prior })}
               </p>
             )}
             {visits.length === 0 ? (
-              p.sessions_prior === 0 && <p className="card text-base text-muted">No visits recorded yet.</p>
+              p.sessions_prior === 0 && <p className="card text-base text-muted">{t("No visits recorded yet.")}</p>
             ) : (
               <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
                 {visits.map((v) => (
                   <li key={v.id} className="flex items-start gap-3 px-4 py-3">
                     <span className={`chip mt-0.5 w-24 shrink-0 justify-center gap-1 py-1 ${STATUS[v.status].className}`}>
                       <Icon name={STATUS[v.status].icon} className="size-3.5" />
-                      {STATUS[v.status].short}
+                      {t(STATUS[v.status].short)}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block font-medium">{formatDate(v.session_date)}</span>
+                      <span className="block font-medium">
+                        {formatDate(v.session_date)}
+                        {by(v.recorded_by) && <span className="text-sm font-normal text-muted"> · {by(v.recorded_by)}</span>}
+                      </span>
                       <VisitCost
                         session={v}
                         typeName={typeName(v.visit_type_id)}
@@ -579,18 +599,18 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
                           date: v.session_date,
                         })}
                       />
-                      {v.pain_score !== null && <span className="block text-sm text-muted">Pain {v.pain_score}/10</span>}
+                      {v.pain_score !== null && <span className="block text-sm text-muted">{t("Pain {n}/10", { n: v.pain_score })}</span>}
                       {doneIn.has(v.id) && <span className="block text-sm">{doneIn.get(v.id)!.join(" · ")}</span>}
                       {v.status === "attended" && (
                         <Link href={`${base}/visits/${v.id}/record`} className="block text-sm font-medium text-brand">
-                          {doneIn.has(v.id) || v.notes ? "Session record" : "+ Exercises & notes"}
+                          {doneIn.has(v.id) || v.notes ? t("Session record") : t("+ Exercises & notes")}
                         </Link>
                       )}
-                      {v.appointments && <span className="block text-sm text-muted">Booked on {formatDate(v.appointments.booked_on)}</span>}
+                      {v.appointments && <span className="block text-sm text-muted">{t("Booked on {date}", { date: formatDate(v.appointments.booked_on) })}</span>}
                       {v.notes && <span className="block text-sm text-muted">{v.notes}</span>}
                     </span>
                     <Link href={`${base}/visits/${v.id}`} className="btn min-h-10 shrink-0 px-3 text-sm">
-                      <Icon name="edit" className="size-4" /> Edit
+                      <Icon name="edit" className="size-4" /> {t("Edit")}
                     </Link>
                   </li>
                 ))}
@@ -603,16 +623,20 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
           <>
             <div className="mt-4 grid grid-cols-2 gap-2.5">
               <Link href={`${base}/package`} className="btn text-base">
-                <Icon name="package" /> New package
+                <Icon name="package" /> {t("New package")}
               </Link>
               <Link href={`${base}/charge`} className="btn text-base">
-                <Icon name="plus" /> Charge / discount
+                <Icon name="plus" /> {t("Charge / discount")}
               </Link>
             </div>
 
-            <SectionTitle aside={p.amount_due < 0 ? `${money(-p.amount_due)} advance` : `${money(p.amount_due)} due`}>Statement</SectionTitle>
+            <SectionTitle
+              aside={p.amount_due < 0 ? t("{amount} advance", { amount: money(-p.amount_due) }) : t("{amount} due", { amount: money(p.amount_due) })}
+            >
+              {t("Statement")}
+            </SectionTitle>
             {ledgerWithBalance.length === 0 ? (
-              <p className="card text-base text-muted">Nothing charged or paid yet.</p>
+              <p className="card text-base text-muted">{t("Nothing charged or paid yet.")}</p>
             ) : (
               <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
                 {ledgerWithBalance.map((r) => (
@@ -625,7 +649,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
                         <span className="mt-1 flex items-center gap-3">
                           {r.receipt && (
                             <a href={r.receipt} target="_blank" rel="noopener noreferrer" className="text-xs font-medium text-brand underline">
-                              Send receipt
+                              {t("Send receipt")}
                             </a>
                           )}
                           {r.remove}
@@ -636,76 +660,84 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
                       <span className={`block font-semibold ${r.amount < 0 ? "text-ok" : ""}`}>
                         {r.amount < 0 ? `− ${money(-r.amount)}` : money(r.amount)}
                       </span>
-                      <span className="block text-xs text-muted">bal. {money(r.balance)}</span>
+                      <span className="block text-xs text-muted">{t("bal. {amount}", { amount: money(r.balance) })}</span>
                     </span>
                   </li>
                 ))}
               </ul>
             )}
 
-            <SectionTitle>Fees for this patient</SectionTitle>
+            <SectionTitle>{t("Fees for this patient")}</SectionTitle>
             <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
-              {activeTypes.map((t) => {
-                const own = patientFee(rates, p.id, "visit", t.id, today);
-                const std = standardFee(rates, "visit", t.id, today);
+              {activeTypes.map((v) => {
+                const own = patientFee(rates, p.id, "visit", v.id, today);
+                const std = standardFee(rates, "visit", v.id, today);
                 const fee = typeof own === "number" ? own : std;
                 return (
-                  <li key={t.id}>
+                  <li key={v.id}>
                     <Link href={`${base}/fees`} className="flex items-center gap-3 px-4 py-3 active:bg-surface-2">
                       <span className="min-w-0 flex-1">
-                        <span className="block font-medium">{t.name}</span>
-                        <span className="block text-sm text-muted">{typeof own === "number" ? "Custom fee for this patient" : "Standard fee"}</span>
+                        <span className="block font-medium">{v.name}</span>
+                        <span className="block text-sm text-muted">{typeof own === "number" ? t("Custom fee for this patient") : t("Standard fee")}</span>
                       </span>
-                      <span className={`font-semibold ${fee === null ? "text-muted" : ""}`}>{fee === null ? "Not set" : money(fee)}</span>
+                      <span className={`font-semibold ${fee === null ? "text-muted" : ""}`}>{fee === null ? t("Not set") : money(fee)}</span>
                       <Icon name="chevron" className="size-5 text-muted" />
                     </Link>
                   </li>
                 );
               })}
             </ul>
-            <p className="mt-2 px-1 text-sm text-muted">Changing a fee only affects visits from the date you choose — past visits keep their price.</p>
+            <p className="mt-2 px-1 text-sm text-muted">{t("Changing a fee only affects visits from the date you choose — past visits keep their price.")}</p>
           </>
         )}
 
         {tab === "schedule" && (
           <>
-            <SectionTitle>Current schedule</SectionTitle>
+            <SectionTitle>{t("Current schedule")}</SectionTitle>
             <div className="card space-y-3">
               {plan ? (
                 <div>
-                  <p className="text-xl font-semibold">{describePlan(plan)}</p>
+                  <p className="text-xl font-semibold">{describePlan(plan, t)}</p>
                   <p className="text-base">{planTypes(plan)}</p>
                   <p className="text-base text-muted">
-                    Since {formatDate(plan.valid_from)}
-                    {plan.valid_until ? ` · until ${formatDate(plan.valid_until)}` : ""}
+                    {t("Since {date}", { date: formatDate(plan.valid_from) })}
+                    {plan.valid_until ? ` · ${t("until {date}", { date: formatDate(plan.valid_until) })}` : ""}
                     {plan.note ? ` · ${plan.note}` : ""}
                   </p>
                 </div>
               ) : (
-                <p className="text-base text-muted">No regular schedule — the patient comes only when booked.</p>
+                <p className="text-base text-muted">{t("No regular schedule — the patient comes only when booked.")}</p>
               )}
               {futurePlan && futurePlan !== plan && (
                 <p className="rounded-xl bg-brand-soft px-3 py-2 text-base text-brand">
-                  Changes to <strong>{describePlan(futurePlan)}</strong> from {formatDate(futurePlan.valid_from)}
+                  {t("Changes to {plan} from {date}", { plan: describePlan(futurePlan, t), date: formatDate(futurePlan.valid_from) })}
                 </p>
               )}
               <div className="flex gap-2">
                 <Link href={`${base}/schedule`} className="btn btn-primary flex-1 text-base">
-                  <Icon name="repeat" /> {plan ? "Change schedule" : "Set schedule"}
+                  <Icon name="repeat" /> {plan ? t("Change schedule") : t("Set schedule")}
                 </Link>
                 {plan && !plan.valid_until && (
                   <form action={endPlan.bind(null, plan.id)}>
-                    <ConfirmButton className="btn text-base text-muted" confirmText="Stop schedule?">
-                      Stop
+                    <ConfirmButton className="btn text-base text-muted" confirmText={t("Stop schedule?")}>
+                      {t("Stop")}
                     </ConfirmButton>
                   </form>
                 )}
               </div>
             </div>
 
-            <SectionTitle aside={<Link href={`${base}/cancel-days`} className="text-brand normal-case">+ Take a break</Link>}>Days off</SectionTitle>
+            <SectionTitle
+              aside={
+                <Link href={`${base}/cancel-days`} className="text-brand normal-case">
+                  {t("+ Take a break")}
+                </Link>
+              }
+            >
+              {t("Days off")}
+            </SectionTitle>
             {daysOff.filter((d) => d.to_date >= today).length === 0 ? (
-              <p className="card text-base text-muted">No days off coming up. Cancel days from the calendar or Coming up on the Overview.</p>
+              <p className="card text-base text-muted">{t("No days off coming up. Cancel days from the calendar or Coming up on the Overview.")}</p>
             ) : (
               <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
                 {daysOff
@@ -716,17 +748,17 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
                         <span className="block font-medium">
                           {d.from_date === d.to_date ? formatDay(d.from_date) : `${formatDay(d.from_date)} – ${formatDay(d.to_date)}`}
                         </span>
-                        <span className="block text-sm text-muted">{describeOff(d)}</span>
+                        <span className="block text-sm text-muted">{describeOff(d, t)}</span>
                       </span>
                       {d.patient_id ? (
                         <form action={restorePatientDay.bind(null, d.id, p.id)}>
-                          <ConfirmButton className="btn min-h-10 px-3 text-sm" confirmText="Restore?">
-                            Restore
+                          <ConfirmButton className="btn min-h-10 px-3 text-sm" confirmText={t("Restore?")}>
+                            {t("Restore")}
                           </ConfirmButton>
                         </form>
                       ) : (
                         <Link href="/profile/days-off" className="btn min-h-10 px-3 text-sm text-muted">
-                          Clinic
+                          {t("Clinic")}
                         </Link>
                       )}
                     </li>
@@ -736,14 +768,14 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
 
             {plans.length > 0 && (
               <>
-                <SectionTitle>History</SectionTitle>
+                <SectionTitle>{t("History")}</SectionTitle>
                 <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
                   {plans.map((pl) => (
                     <li key={pl.id} className="px-4 py-3">
-                      <p className="font-medium">{describePlan(pl)}</p>
+                      <p className="font-medium">{describePlan(pl, t)}</p>
                       <p className="text-sm">{planTypes(pl)}</p>
                       <p className="text-sm text-muted">
-                        {formatDate(pl.valid_from)} – {pl.valid_until ? formatDate(pl.valid_until) : "now"}
+                        {formatDate(pl.valid_from)} – {pl.valid_until ? formatDate(pl.valid_until) : t("now")}
                         {pl.note ? ` · ${pl.note}` : ""}
                       </p>
                     </li>

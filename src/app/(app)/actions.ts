@@ -1,6 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
+import { isLocale, msg, type T } from "@/i18n";
+import { getT } from "@/i18n/server";
+import { setLanguageCookie } from "../login/actions";
 import { redirect } from "next/navigation";
 import { getBilling, packageSlots } from "@/lib/billing";
 import { getContext } from "@/lib/context";
@@ -52,23 +56,23 @@ function phoneFrom(form: FormData, clinicCountry: string): string | null | undef
 function patientNameFrom(form: FormData) {
   const typed = splitDesignation(text(form, "name"));
   const picked = text(form, "title");
-  if (!typed.name) return { error: "Please enter the patient's name." };
-  if (!isPatientTitle(picked)) return { error: "Pick a title." };
+  if (!typed.name) return { error: msg("Please enter the patient's name.") };
+  if (!isPatientTitle(picked)) return { error: msg("Pick a title.") };
   return { name: typed.name, title: picked || typed.designation };
 }
 
 function personalFrom(form: FormData, today: string, clinicCountry: string) {
   const dob = isoDate(form, "date_of_birth");
   const age = text(form, "age") ? int(form, "age") : null;
-  if (dob && dob > today) return { error: "Date of birth can't be in the future." };
-  if (age !== null && (Number.isNaN(age) || age < 0 || age > 120)) return { error: "Age must be a number between 0 and 120." };
+  if (dob && dob > today) return { error: msg("Date of birth can't be in the future.") };
+  if (age !== null && (Number.isNaN(age) || age < 0 || age > 120)) return { error: msg("Age must be a number between 0 and 120.") };
 
   const rawEmergency = text(form, "emergency_phone");
   const emergencyPhone = rawEmergency ? toE164(rawEmergency, text(form, "emergency_phone_country") || clinicCountry) : null;
-  if (rawEmergency && !emergencyPhone) return { error: "The emergency contact number doesn't look right." };
+  if (rawEmergency && !emergencyPhone) return { error: msg("The emergency contact number doesn't look right.") };
 
   const injury = isoDate(form, "injury_date");
-  if (injury && injury > today) return { error: "The injury / surgery date can't be in the future." };
+  if (injury && injury > today) return { error: msg("The injury / surgery date can't be in the future.") };
 
   const address = addressFrom(form, clinicCountry);
   if ("error" in address) return address;
@@ -78,7 +82,7 @@ function personalFrom(form: FormData, today: string, clinicCountry: string) {
   const referrerTitle = text(form, "referred_by_title");
   const emergency = splitDesignation(text(form, "emergency_name"));
   const emergencyTitle = text(form, "emergency_title");
-  if (!isDesignation(referrerTitle) || !isPatientTitle(emergencyTitle)) return { error: "Pick a title from the list." };
+  if (!isDesignation(referrerTitle) || !isPatientTitle(emergencyTitle)) return { error: msg("Pick a title from the list.") };
 
   const gender = text(form, "gender");
   return {
@@ -101,7 +105,7 @@ function personalFrom(form: FormData, today: string, clinicCountry: string) {
 /** Address parts and the optional map pin. */
 function addressFrom(form: FormData, clinicCountry: string) {
   const country = text(form, "address_country") || clinicCountry;
-  if (!isCountryCode(country)) return { error: "Pick the address's country." };
+  if (!isCountryCode(country)) return { error: msg("Pick the address's country.") };
   const rawCode = text(form, "postal_code");
   const postalCode = country === "IN" ? rawCode.replace(/\s+/g, "") : rawCode; // "400 052" → "400052"
   const problem = postalCodeProblem(postalCode, country);
@@ -110,7 +114,7 @@ function addressFrom(form: FormData, clinicCountry: string) {
   const lat = text(form, "latitude") ? Number(text(form, "latitude")) : null;
   const lng = text(form, "longitude") ? Number(text(form, "longitude")) : null;
   const pinOk = (lat === null && lng === null) || (lat !== null && lng !== null && Math.abs(lat) <= 90 && Math.abs(lng) <= 180);
-  if (!pinOk) return { error: "The map pin didn't save properly. Pick the spot on the map again." };
+  if (!pinOk) return { error: msg("The map pin didn't save properly. Pick the spot on the map again.") };
 
   return {
     address: text(form, "address") || null,
@@ -144,15 +148,15 @@ async function visitTypeFrom(form: FormData, key = "visit_type_id"): Promise<str
  * Payments from either the single "paid now" fields or repeated PaymentRows
  * (pay_amount[] / pay_method[] / pay_date[]). Empty rows are skipped.
  */
-function paymentsFrom(form: FormData, today: string) {
+function paymentsFrom(form: FormData, today: string, t: T) {
   const rows: { amount: number; method: string; paid_on: string }[] = [];
   const method = (m: string) => (METHODS.includes(m as PaymentMethod) ? m : "upi");
 
   if (text(form, "paid_now")) {
     const amount = money(form, "paid_now");
     const paidOn = isoDate(form, "paid_on") ?? today;
-    if (Number.isNaN(amount) || amount < 0) return { error: "Amount paid must be a number." };
-    if (paidOn > today) return { error: "Payment date can't be in the future." };
+    if (Number.isNaN(amount) || amount < 0) return { error: msg("Amount paid must be a number.") };
+    if (paidOn > today) return { error: msg("Payment date can't be in the future.") };
     if (amount > 0) rows.push({ amount, method: method(text(form, "method")), paid_on: paidOn });
   }
 
@@ -162,9 +166,9 @@ function paymentsFrom(form: FormData, today: string) {
   for (let i = 0; i < amounts.length; i++) {
     if (!amounts[i]) continue;
     const amount = Number(amounts[i]);
-    if (!(amount > 0)) return { error: `Payment ${i + 1}: amount must be a number.` };
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(dates[i] ?? "")) return { error: `Payment ${i + 1}: add the date it was paid.` };
-    if (dates[i] > today) return { error: `Payment ${i + 1}: date can't be in the future.` };
+    if (!(amount > 0)) return { error: t("Payment {n}: amount must be a number.", { n: i + 1 }) };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dates[i] ?? "")) return { error: t("Payment {n}: add the date it was paid.", { n: i + 1 }) };
+    if (dates[i] > today) return { error: t("Payment {n}: date can't be in the future.", { n: i + 1 }) };
     rows.push({ amount, method: method(methods[i]), paid_on: dates[i] });
   }
   return rows;
@@ -175,7 +179,7 @@ function pastDatesFrom(form: FormData, today: string): { attended: string[]; mis
   const clean = (key: string) => [...new Set(form.getAll(key).map(String))].filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
   const attended = clean("attended_dates");
   const missed = clean("missed_dates").filter((d) => !attended.includes(d));
-  if ([...attended, ...missed].some((d) => d > today)) return { error: "Past sessions can't be in the future." };
+  if ([...attended, ...missed].some((d) => d > today)) return { error: msg("Past sessions can't be in the future.") };
   return { attended, missed };
 }
 
@@ -190,7 +194,7 @@ async function patientFeeChanges(form: FormData, patientId: string | null, from:
   for (const t of activeTypes) {
     const raw = text(form, `fee_${t.id}`).replace(/[,₹\s]/g, "");
     const typed = raw === "" ? null : Number(raw);
-    if (typed !== null && (Number.isNaN(typed) || typed < 0)) return { error: `${t.name}: the fee must be a number.` };
+    if (typed !== null && (Number.isNaN(typed) || typed < 0)) return { error: (await getT())("{type}: the fee must be a number.", { type: t.name }) };
 
     const std = standardFee(rates, "visit", t.id, from);
     const wanted: number | "standard" = typed === null || typed === std ? "standard" : typed;
@@ -211,12 +215,35 @@ function refresh() {
 }
 
 /** Database errors in plain words. A missing column means a migration hasn't been run yet. */
-function dbError(error: { message: string }): string {
+function dbError(error: { message: string; code?: string }): string {
+  if (error.code === "23505" && /sessions_one_per_day/.test(error.message)) return msg("This day is already marked. Undo it first to change it.");
   if (/schema cache|does not exist/i.test(error.message)) {
-    return "The database needs an update: run the newest file in supabase/migrations in the Supabase SQL Editor, then try again.";
+    return msg("The database needs an update: run the newest file in supabase/migrations in the Supabase SQL Editor, then try again.");
   }
   return error.message;
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * True when this exact form submission was already saved. On a weak signal the
+ * app resends a save whose answer got lost (see experimental.useOffline); each
+ * submission carries a one-off `_once` key (useFormAction), so the second copy
+ * is recognised here and the caller skips the write instead of saving twice.
+ * Call it after validation, just before the first write.
+ */
+async function isResend({ supabase, clinic }: Pick<Ctx, "supabase" | "clinic">, form: FormData): Promise<boolean> {
+  const key = text(form, "_once");
+  if (!UUID.test(key)) return false;
+  const { error } = await supabase.from("request_keys").insert({ key, clinic_id: clinic.id });
+  if (!error) return false;
+  if (error.code === "23505") return true;
+  if (/schema cache|does not exist/i.test(error.message)) return false; // migration 0011 not run yet: no guard, carry on
+  throw new Error(dbError(error));
+}
+
+/** Clinic-wide settings (standard fees, visit types, clinic closures) are the owner's; the database enforces it too. */
+const OWNER_ONLY = msg("Only the clinic owner can change this. Ask them, or ask to be made an owner under Profile → Team.");
 
 type PatientTab = "overview" | "history" | "visits" | "account" | "schedule";
 
@@ -247,17 +274,17 @@ type PlanInput = {
 async function planFrom(form: FormData, today: string): Promise<PlanInput | { error: string } | null> {
   const mode = text(form, "plan_mode");
   if (!mode || mode === "none") return null;
-  if (mode !== "fixed_days" && mode !== "flexible") return { error: "Pick a schedule type." };
+  if (mode !== "fixed_days" && mode !== "flexible") return { error: msg("Pick a schedule type.") };
 
   const everyN = int(form, "every_n_weeks") || 1;
-  if (everyN < 1 || everyN > 8) return { error: "Repeat every 1–8 weeks." };
+  if (everyN < 1 || everyN > 8) return { error: msg("Repeat every 1–8 weeks.") };
   const validFrom = isoDate(form, "plan_from") ?? today;
   const visitType = await visitTypeFrom(form, "plan_visit_type");
   const base = { every_n_weeks: everyN, valid_from: validFrom, note: text(form, "plan_note") || null, visit_type_id: visitType };
 
   if (mode === "fixed_days") {
     const weekdays = [...new Set(form.getAll("weekdays").map(Number))].filter((d) => d >= 1 && d <= 7).sort();
-    if (weekdays.length === 0) return { error: "Pick at least one day." };
+    if (weekdays.length === 0) return { error: msg("Pick at least one day.") };
     // Mixed schedules: a different visit type on some days.
     const dayTypes: Record<string, string> = {};
     for (const d of weekdays) {
@@ -268,7 +295,7 @@ async function planFrom(form: FormData, today: string): Promise<PlanInput | { er
   }
 
   const k = int(form, "sessions_per_period");
-  if (!(k >= 1 && k <= 14)) return { error: "Sessions per period must be between 1 and 14." };
+  if (!(k >= 1 && k <= 14)) return { error: msg("Sessions per period must be between 1 and 14.") };
   return { ...base, mode, weekdays: [], sessions_per_period: k, day_visit_types: {} };
 }
 
@@ -299,11 +326,11 @@ async function startPlan({ supabase, clinic }: Ctx, patientId: string, plan: Pla
 export async function changePlan(patientId: string, _prev: FormState, form: FormData): Promise<FormState> {
   const ctx = await getContext();
   const plan = await planFrom(form, todayIn(ctx.clinic.timezone));
-  if (!plan) return { error: "Pick a schedule type." };
+  if (!plan) return { error: msg("Pick a schedule type.") };
   if ("error" in plan) return plan;
   const err = await startPlan(ctx, patientId, plan);
   if (err) return { error: err };
-  backToPatient(patientId, "schedule", "Schedule saved");
+  backToPatient(patientId, "schedule", msg("Schedule saved"));
 }
 
 /** Stop the plan after today (today still counts). Plans not started yet are removed. */
@@ -334,7 +361,7 @@ export async function createPatient(_prev: FormState, form: FormData): Promise<F
   const { name, title } = named;
 
   const phone = phoneFrom(form, clinic.country);
-  if (phone === null) return { error: "That phone number doesn't look right for the selected country." };
+  if (phone === null) return { error: msg("That phone number doesn't look right for the selected country.") };
 
   const personal = personalFrom(form, today, clinic.country);
   if ("error" in personal) return personal;
@@ -343,14 +370,14 @@ export async function createPatient(_prev: FormState, form: FormData): Promise<F
   const sessions = text(form, "sessions") ? int(form, "sessions") : 0;
   const price = money(form, "price");
   const usedBefore = text(form, "used_before") ? int(form, "used_before") : 0;
-  if (Number.isNaN(sessions) || sessions < 0) return { error: "Number of sessions must be a whole number." };
-  if (Number.isNaN(usedBefore) || usedBefore < 0) return { error: "“Sessions already done” must be a whole number." };
-  if (usedBefore > 0 && sessions === 0) return { error: "Add the package these sessions belong to." };
-  if (Number.isNaN(price) || price < 0) return { error: "Package price must be a number." };
+  if (Number.isNaN(sessions) || sessions < 0) return { error: msg("Number of sessions must be a whole number.") };
+  if (Number.isNaN(usedBefore) || usedBefore < 0) return { error: msg("“Sessions already done” must be a whole number.") };
+  if (usedBefore > 0 && sessions === 0) return { error: msg("Add the package these sessions belong to.") };
+  if (Number.isNaN(price) || price < 0) return { error: msg("Package price must be a number.") };
   const packageStart = isoDate(form, "package_start") ?? today;
-  if (packageStart > today) return { error: "Package start date can't be in the future." };
+  if (packageStart > today) return { error: msg("Package start date can't be in the future.") };
 
-  const payments = paymentsFrom(form, today);
+  const payments = paymentsFrom(form, today, await getT());
   if ("error" in payments) return payments;
 
   const past = pastDatesFrom(form, today);
@@ -363,6 +390,10 @@ export async function createPatient(_prev: FormState, form: FormData): Promise<F
   const feesFrom = [today, packageStart, ...past.attended, ...past.missed].sort()[0];
   const fees = await patientFeeChanges(form, null, feesFrom);
   if ("error" in fees) return fees;
+  if (await isResend(ctx, form)) {
+    refresh();
+    redirect(`/patients?${new URLSearchParams({ done: (await getT())("{name} added", { name }) })}`);
+  }
 
   const { data: patient, error } = await supabase
     .from("patients")
@@ -370,6 +401,9 @@ export async function createPatient(_prev: FormState, form: FormData): Promise<F
       clinic_id: clinic.id,
       name,
       title,
+      // Main physio: whoever adds the patient, unless someone else is picked (clinic teams).
+      physio_id: text(form, "physio_id") || ctx.userId,
+      language: isLocale(text(form, "language")) ? text(form, "language") : "en",
       phone: phone ?? null,
       condition: text(form, "condition") || null,
       default_visit_type_id: visitType,
@@ -378,7 +412,7 @@ export async function createPatient(_prev: FormState, form: FormData): Promise<F
     .select("id")
     .single();
   if (error) {
-    return { error: error.code === "23505" ? "A patient with this phone number already exists." : dbError(error) };
+    return { error: error.code === "23505" ? msg("A patient with this phone number already exists.") : dbError(error) };
   }
 
   // All or nothing: if anything below fails, remove the half-saved patient
@@ -426,7 +460,7 @@ export async function createPatient(_prev: FormState, form: FormData): Promise<F
     if (err) return failed(err);
   }
 
-  backToPatient(patient.id, "overview", `${name} added`);
+  backToPatient(patient.id, "overview", (await getT())("{name} added", { name }));
 }
 
 export async function updatePatient(patientId: string, _prev: FormState, form: FormData): Promise<FormState> {
@@ -435,7 +469,7 @@ export async function updatePatient(patientId: string, _prev: FormState, form: F
   if ("error" in named) return named;
   const { name, title } = named;
   const phone = phoneFrom(form, clinic.country);
-  if (phone === null) return { error: "That phone number doesn't look right for the selected country." };
+  if (phone === null) return { error: msg("That phone number doesn't look right for the selected country.") };
   const personal = personalFrom(form, todayIn(clinic.timezone), clinic.country);
   if ("error" in personal) return personal;
 
@@ -444,14 +478,17 @@ export async function updatePatient(patientId: string, _prev: FormState, form: F
     .update({
       name,
       title,
+      // Only clinic teams see the picker; "" = no main physio.
+      ...(form.has("physio_id") ? { physio_id: text(form, "physio_id") || null } : {}),
+      ...(isLocale(text(form, "language")) ? { language: text(form, "language") } : {}),
       phone: phone ?? null,
       condition: text(form, "condition") || null,
       default_visit_type_id: await visitTypeFrom(form),
       ...personal,
     })
     .eq("id", patientId);
-  if (error) return { error: error.code === "23505" ? "Another patient already has this phone number." : dbError(error) };
-  backToPatient(patientId, "overview", "Details saved");
+  if (error) return { error: error.code === "23505" ? msg("Another patient already has this phone number.") : dbError(error) };
+  backToPatient(patientId, "overview", msg("Details saved"));
 }
 
 export async function setArchived(patientId: string, archived: boolean) {
@@ -460,9 +497,9 @@ export async function setArchived(patientId: string, archived: boolean) {
   if (error) throw new Error(error.message);
   if (archived) {
     refresh();
-    redirect(`/patients?${new URLSearchParams({ done: "Patient archived" })}`);
+    redirect(`/patients?${new URLSearchParams({ done: msg("Patient archived") })}`);
   }
-  backToPatient(patientId, "overview", "Patient restored");
+  backToPatient(patientId, "overview", msg("Patient restored"));
 }
 
 // ---------------------------------------------------------------------------
@@ -508,7 +545,7 @@ async function recordVisit(ctx: Ctx, patientId: string, v: VisitInput): Promise<
       .limit(1)
       .maybeSingle(),
   ]);
-  if (existing) return { error: "This day is already marked. Undo it first to change it." };
+  if (existing) return { error: msg("This day is already marked. Undo it first to change it.") };
 
   const visitTypeId = v.visitTypeId ?? booking?.visit_type_id ?? null;
   const caseId = await activeCaseFor(ctx, patientId, v.date);
@@ -545,7 +582,8 @@ export async function markToday(patientId: string, status: "attended" | "missed"
     chargeIt: false,
     notes: null,
   });
-  if ("error" in result) throw new Error(result.error);
+  // Already marked (a resent tap, or another physio got there first): just show it.
+  if ("error" in result && !/already marked/.test(result.error)) throw new Error(result.error);
   refresh();
 }
 
@@ -554,16 +592,17 @@ export async function recordAttendance(patientId: string, date: string, _prev: F
   const ctx = await getContext();
   const today = todayIn(ctx.clinic.timezone);
   const status = text(form, "status") as VisitOutcome;
-  if (!STATUSES.includes(status)) return { error: "Pick what happened." };
-  if (date > today) return { error: "You can't mark a day that hasn't happened yet." };
+  if (!STATUSES.includes(status)) return { error: msg("Pick what happened.") };
+  if (date > today) return { error: msg("You can't mark a day that hasn't happened yet.") };
 
   const reschedule = status === "attended" ? null : isoDate(form, "reschedule_date");
-  if (reschedule && reschedule <= date) return { error: "Pick a new date after the cancelled one." };
+  if (reschedule && reschedule <= date) return { error: msg("Pick a new date after the cancelled one.") };
 
   const pain = painFrom(form);
-  if (pain === undefined) return { error: "Pain score must be between 0 and 10." };
+  if (pain === undefined) return { error: msg("Pain score must be between 0 and 10.") };
 
   const visitTypeId = await visitTypeFrom(form);
+  if (await isResend(ctx, form)) backToPatient(patientId, "visits", msg("Attendance saved"));
   const result = await recordVisit(ctx, patientId, {
     date,
     status,
@@ -586,7 +625,7 @@ export async function recordAttendance(patientId: string, date: string, _prev: F
     });
     if (error) return { error: dbError(error) };
   }
-  backToPatient(patientId, "visits", reschedule ? "Saved and rescheduled" : "Attendance saved");
+  backToPatient(patientId, "visits", reschedule ? msg("Saved and rescheduled") : "Attendance saved");
 }
 
 /** Charge (or stop charging) an absence or patient cancellation after it was marked. */
@@ -622,20 +661,20 @@ export async function updateSession(sessionId: string, _prev: FormState, form: F
   const { supabase } = ctx;
   const today = todayIn(ctx.clinic.timezone);
   const { data: s } = await supabase.from("sessions").select("*").eq("id", sessionId).single();
-  if (!s) return { error: "This visit no longer exists." };
+  if (!s) return { error: msg("This visit no longer exists.") };
 
   const date = isoDate(form, "session_date");
   const status = text(form, "status") as VisitOutcome;
   const billing = text(form, "billing");
-  if (!date) return { error: "Pick the date." };
-  if (date > today) return { error: "The date can't be in the future." };
-  if (!STATUSES.includes(status)) return { error: "Pick what happened." };
+  if (!date) return { error: msg("Pick the date.") };
+  if (date > today) return { error: msg("The date can't be in the future.") };
+  if (!STATUSES.includes(status)) return { error: msg("Pick what happened.") };
   const pain = painFrom(form);
-  if (pain === undefined) return { error: "Pain score must be between 0 and 10." };
+  if (pain === undefined) return { error: msg("Pain score must be between 0 and 10.") };
 
   if (date !== s.session_date) {
     const { data: clash } = await supabase.from("sessions").select("id").eq("patient_id", s.patient_id).eq("session_date", date).neq("id", sessionId).maybeSingle();
-    if (clash) return { error: "There's already a visit on that date. Edit or remove that one instead." };
+    if (clash) return { error: msg("There's already a visit on that date. Edit or remove that one instead.") };
   }
 
   let price = { package_id: null as string | null, charge: 0 };
@@ -649,15 +688,15 @@ export async function updateSession(sessionId: string, _prev: FormState, form: F
       const slot = (await packageSlots(ctx, s.patient_id))
         .filter((p) => p.remaining > 0 && (p.visit_type_id === null || p.visit_type_id === visitTypeId))
         .sort((a, b) => a.start_date.localeCompare(b.start_date))[0];
-      if (!slot) return { error: "No package sessions left for this visit type. Choose an amount instead." };
+      if (!slot) return { error: msg("No package sessions left for this visit type. Choose an amount instead.") };
       price = { package_id: slot.id, charge: 0 };
     }
   } else if (billing === "amount") {
     const amount = money(form, "charge");
-    if (Number.isNaN(amount) || amount < 0) return { error: "Enter the amount charged." };
+    if (Number.isNaN(amount) || amount < 0) return { error: msg("Enter the amount charged.") };
     price = { package_id: null, charge: amount };
   } else {
-    return { error: "Choose how this visit is paid for." };
+    return { error: msg("Choose how this visit is paid for.") };
   }
 
   const { error } = await supabase
@@ -672,13 +711,13 @@ export async function updateSession(sessionId: string, _prev: FormState, form: F
     })
     .eq("id", sessionId);
   if (error) return { error: dbError(error) };
-  backToPatient(s.patient_id, "visits", "Visit updated");
+  backToPatient(s.patient_id, "visits", msg("Visit updated"));
 }
 
 /** One-tap pain score after marking Present (the tapped button carries the score). */
 export async function setPainScore(sessionId: string, form: FormData) {
   const pain = painFrom(form);
-  if (pain === undefined) throw new Error("Pain score must be between 0 and 10.");
+  if (pain === undefined) throw new Error(msg("Pain score must be between 0 and 10."));
   const { supabase } = await getContext();
   const { error } = await supabase.from("sessions").update({ pain_score: pain }).eq("id", sessionId).eq("status", "attended");
   if (error) throw new Error(dbError(error));
@@ -690,7 +729,7 @@ export async function removeVisit(sessionId: string, patientId: string) {
   const { supabase } = await getContext();
   const { error } = await supabase.from("sessions").delete().eq("id", sessionId);
   if (error) throw new Error(error.message);
-  backToPatient(patientId, "visits", "Visit removed");
+  backToPatient(patientId, "visits", msg("Visit removed"));
 }
 
 export async function deleteSession(sessionId: string) {
@@ -755,21 +794,26 @@ export async function addPastSessions(patientId: string, _prev: FormState, form:
   const ctx = await getContext();
   const past = pastDatesFrom(form, todayIn(ctx.clinic.timezone));
   if ("error" in past) return past;
-  if (past.attended.length + past.missed.length === 0) return { error: "Tap the dates on the calendar first." };
+  if (past.attended.length + past.missed.length === 0) return { error: msg("Tap the dates on the calendar first.") };
 
   const mode = text(form, "pricing");
   let pricing: Pricing = { mode: "auto" };
   if (mode === "none") pricing = { mode: "none" };
   if (mode === "fixed") {
     const amount = money(form, "fixed_amount");
-    if (!(amount > 0)) return { error: "Enter the amount per session, or choose another pricing option." };
+    if (!(amount > 0)) return { error: msg("Enter the amount per session, or choose another pricing option.") };
     pricing = { mode: "fixed", amount };
   }
 
   const result = await insertPastSessions(ctx, patientId, past.attended, past.missed, await visitTypeFrom(form), pricing);
   if ("error" in result) return result;
   const n = result.added;
-  backToPatient(patientId, "visits", `${n} session${n === 1 ? "" : "s"} added${result.skipped ? ` (${result.skipped} already recorded)` : ""}`);
+  const t = await getT();
+  backToPatient(
+    patientId,
+    "visits",
+    `${n === 1 ? t("1 session added") : t("{n} sessions added", { n })}${result.skipped ? ` ${t("({n} already recorded)", { n: result.skipped })}` : ""}`,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -781,10 +825,11 @@ export async function bookSession(patientId: string, _prev: FormState, form: For
   const today = todayIn(clinic.timezone);
   const scheduled = isoDate(form, "scheduled_date");
   const bookedOn = isoDate(form, "booked_on") ?? today;
-  if (!scheduled) return { error: "Pick the session date." };
-  if (scheduled < today) return { error: "That date has passed — use “Add past sessions” instead." };
-  if (bookedOn > today) return { error: "Booked-on date can't be in the future." };
-  if (bookedOn > scheduled) return { error: "Booked-on date can't be after the session date." };
+  if (!scheduled) return { error: msg("Pick the session date.") };
+  if (scheduled < today) return { error: msg("That date has passed — use “Add past sessions” instead.") };
+  if (bookedOn > today) return { error: msg("Booked-on date can't be in the future.") };
+  if (bookedOn > scheduled) return { error: msg("Booked-on date can't be after the session date.") };
+  if (await isResend({ supabase, clinic }, form)) backToPatient(patientId, "overview", msg("Session booked"));
 
   const { error } = await supabase.from("appointments").insert({
     clinic_id: clinic.id,
@@ -795,7 +840,7 @@ export async function bookSession(patientId: string, _prev: FormState, form: For
     note: text(form, "note") || null,
   });
   if (error) return { error: dbError(error) };
-  backToPatient(patientId, "overview", "Session booked");
+  backToPatient(patientId, "overview", msg("Session booked"));
 }
 
 export async function cancelBooking(appointmentId: string) {
@@ -816,11 +861,12 @@ export async function addPackage(patientId: string, _prev: FormState, form: Form
   const price = money(form, "price");
   const usedBefore = text(form, "used_before") ? int(form, "used_before") : 0;
   const startDate = isoDate(form, "start_date") ?? today;
-  if (!(sessions > 0)) return { error: "Enter how many sessions are in the package." };
-  if (Number.isNaN(price) || price < 0) return { error: "Price must be a number." };
-  if (Number.isNaN(usedBefore) || usedBefore < 0) return { error: "“Sessions already done” must be a whole number." };
-  if (usedBefore > sessions) return { error: "More sessions done than the package has." };
-  if (startDate > today) return { error: "Start date can't be in the future." };
+  if (!(sessions > 0)) return { error: msg("Enter how many sessions are in the package.") };
+  if (Number.isNaN(price) || price < 0) return { error: msg("Price must be a number.") };
+  if (Number.isNaN(usedBefore) || usedBefore < 0) return { error: msg("“Sessions already done” must be a whole number.") };
+  if (usedBefore > sessions) return { error: msg("More sessions done than the package has.") };
+  if (startDate > today) return { error: msg("Start date can't be in the future.") };
+  if (await isResend({ supabase, clinic }, form)) backToPatient(patientId, "account", msg("Package added"));
 
   const { error } = await supabase.from("packages").insert({
     clinic_id: clinic.id,
@@ -833,7 +879,7 @@ export async function addPackage(patientId: string, _prev: FormState, form: Form
     sessions_used_before: usedBefore,
   });
   if (error) return { error: dbError(error) };
-  backToPatient(patientId, "account", "Package added");
+  backToPatient(patientId, "account", msg("Package added"));
 }
 
 export async function deletePackage(packageId: string) {
@@ -850,9 +896,10 @@ export async function addCharge(patientId: string, _prev: FormState, form: FormD
   const amount = money(form, "amount");
   const isDiscount = text(form, "kind") === "discount";
   const date = isoDate(form, "charge_date") ?? today;
-  if (!description) return { error: isDiscount ? "Say what the discount is for." : "Say what the charge is for." };
-  if (!(amount > 0)) return { error: "Enter the amount." };
-  if (date > today) return { error: "Date can't be in the future." };
+  if (!description) return { error: isDiscount ? msg("Say what the discount is for.") : msg("Say what the charge is for.") };
+  if (!(amount > 0)) return { error: msg("Enter the amount.") };
+  if (date > today) return { error: msg("Date can't be in the future.") };
+  if (await isResend({ supabase, clinic }, form)) backToPatient(patientId, "account", msg("Saved"));
 
   const { error } = await supabase.from("charges").insert({
     clinic_id: clinic.id,
@@ -862,7 +909,7 @@ export async function addCharge(patientId: string, _prev: FormState, form: FormD
     amount: isDiscount ? -amount : amount,
   });
   if (error) return { error: dbError(error) };
-  backToPatient(patientId, "account", isDiscount ? "Discount added" : "Charge added");
+  backToPatient(patientId, "account", isDiscount ? msg("Discount added") : "Charge added");
 }
 
 export async function deleteCharge(chargeId: string) {
@@ -878,9 +925,10 @@ export async function recordPayment(patientId: string, _prev: FormState, form: F
   const amount = money(form, "amount");
   const method = text(form, "method") as PaymentMethod;
   const paidOn = isoDate(form, "paid_on") ?? today;
-  if (!(amount > 0)) return { error: "Enter the amount received." };
-  if (!METHODS.includes(method)) return { error: "Pick a payment method." };
-  if (paidOn > today) return { error: "Payment date can't be in the future." };
+  if (!(amount > 0)) return { error: msg("Enter the amount received.") };
+  if (!METHODS.includes(method)) return { error: msg("Pick a payment method.") };
+  if (paidOn > today) return { error: msg("Payment date can't be in the future.") };
+  if (await isResend({ supabase, clinic }, form)) backToPatient(patientId, "account", msg("Payment recorded"));
 
   const { error } = await supabase.from("payments").insert({
     clinic_id: clinic.id,
@@ -891,7 +939,7 @@ export async function recordPayment(patientId: string, _prev: FormState, form: F
     note: text(form, "note") || null,
   });
   if (error) return { error: dbError(error) };
-  backToPatient(patientId, "account", "Payment recorded");
+  backToPatient(patientId, "account", msg("Payment recorded"));
 }
 
 export async function deletePayment(paymentId: string) {
@@ -925,23 +973,24 @@ function feeFormInput(form: FormData, today: string) {
   const from = isoDate(form, "effective_from") ?? today;
   const standard = text(form, "use_standard") === "on";
   const amount = standard ? null : money(form, "amount");
-  if (!RATE_KINDS.includes(kind)) return { error: "Unknown fee." };
-  if (amount !== null && (Number.isNaN(amount) || amount < 0 || !text(form, "amount"))) return { error: "Enter the fee amount." };
+  if (!RATE_KINDS.includes(kind)) return { error: msg("Unknown fee.") };
+  if (amount !== null && (Number.isNaN(amount) || amount < 0 || !text(form, "amount"))) return { error: msg("Enter the fee amount.") };
   return { kind, from, amount };
 }
 
 export async function setClinicFee(_prev: FormState, form: FormData): Promise<FormState> {
   const ctx = await getContext();
+  if (ctx.member.role !== "owner") return { error: OWNER_ONLY };
   const input = feeFormInput(form, todayIn(ctx.clinic.timezone));
   if ("error" in input) return input;
-  if (input.amount === null) return { error: "Enter the fee amount." };
+  if (input.amount === null) return { error: msg("Enter the fee amount.") };
   const visitTypeId = input.kind === "visit" ? await visitTypeFrom(form) : null;
-  if (input.kind === "visit" && !visitTypeId) return { error: "Pick the visit type." };
+  if (input.kind === "visit" && !visitTypeId) return { error: msg("Pick the visit type.") };
 
   const err = await saveRate(ctx, { patient_id: null, kind: input.kind, visit_type_id: visitTypeId, amount: input.amount, effective_from: input.from });
   if (err) return { error: err };
   refresh();
-  redirect(`/profile/fees?${new URLSearchParams({ done: "Fee saved" })}`);
+  redirect(`/profile/fees?${new URLSearchParams({ done: msg("Fee saved") })}`);
 }
 
 /** Save a patient's fees for every visit type at once, from one date. */
@@ -950,13 +999,13 @@ export async function setPatientFees(patientId: string, _prev: FormState, form: 
   const from = isoDate(form, "effective_from") ?? todayIn(ctx.clinic.timezone);
   const changes = await patientFeeChanges(form, patientId, from);
   if ("error" in changes) return changes;
-  if (changes.length === 0) return { error: "Nothing changed — edit a fee first." };
+  if (changes.length === 0) return { error: msg("Nothing changed — edit a fee first.") };
 
   for (const c of changes) {
     const err = await saveRate(ctx, { patient_id: patientId, kind: "visit", effective_from: from, ...c });
     if (err) return { error: err };
   }
-  backToPatient(patientId, "overview", `Fees saved (${changes.length} changed)`);
+  backToPatient(patientId, "overview", (await getT())("Fees saved ({n} changed)", { n: changes.length }));
 }
 
 export async function deleteRate(rateId: string) {
@@ -971,26 +1020,28 @@ export async function deleteRate(rateId: string) {
 // ---------------------------------------------------------------------------
 
 export async function addVisitType(_prev: FormState, form: FormData): Promise<FormState> {
-  const { supabase, clinic } = await getContext();
+  const { supabase, clinic, member } = await getContext();
+  if (member.role !== "owner") return { error: OWNER_ONLY };
   const name = text(form, "name");
-  if (!name) return { error: "Enter a name, e.g. Group session." };
+  if (!name) return { error: msg("Enter a name, e.g. Group session.") };
   const { visitTypes } = await getBilling();
   const { error } = await supabase
     .from("visit_types")
     .insert({ clinic_id: clinic.id, name, sort: Math.max(0, ...visitTypes.map((t) => t.sort)) + 1 });
-  if (error) return { error: error.code === "23505" ? "You already have a visit type with that name." : dbError(error) };
+  if (error) return { error: error.code === "23505" ? msg("You already have a visit type with that name.") : dbError(error) };
   refresh();
-  redirect(`/profile/fees?${new URLSearchParams({ done: `${name} added` })}`);
+  redirect(`/profile/fees?${new URLSearchParams({ done: (await getT())("{name} added", { name }) })}`);
 }
 
 export async function renameVisitType(typeId: string, _prev: FormState, form: FormData): Promise<FormState> {
-  const { supabase } = await getContext();
+  const { supabase, member } = await getContext();
+  if (member.role !== "owner") return { error: OWNER_ONLY };
   const name = text(form, "name");
-  if (!name) return { error: "Name can't be empty." };
+  if (!name) return { error: msg("Name can't be empty.") };
   const { error } = await supabase.from("visit_types").update({ name }).eq("id", typeId);
-  if (error) return { error: error.code === "23505" ? "You already have a visit type with that name." : dbError(error) };
+  if (error) return { error: error.code === "23505" ? msg("You already have a visit type with that name.") : dbError(error) };
   refresh();
-  return { ok: "Renamed" };
+  return { ok: msg("Renamed") };
 }
 
 export async function setVisitTypeArchived(typeId: string, archived: boolean) {
@@ -1006,13 +1057,18 @@ export async function setVisitTypeArchived(typeId: string, archived: boolean) {
 
 /** Clinic closed / physio away for a date range. Then go straight to telling patients. */
 export async function addClinicDaysOff(_prev: FormState, form: FormData): Promise<FormState> {
-  const { supabase, clinic } = await getContext();
+  const { supabase, clinic, member } = await getContext();
+  if (member.role !== "owner") return { error: OWNER_ONLY };
   const today = todayIn(clinic.timezone);
   const from = isoDate(form, "from_date");
   const to = isoDate(form, "to_date") ?? from;
-  if (!from || !to) return { error: "Pick the first and last day." };
-  if (to < from) return { error: "The last day can't be before the first day." };
-  if (to < today) return { error: "Those days have already passed." };
+  if (!from || !to) return { error: msg("Pick the first and last day.") };
+  if (to < from) return { error: msg("The last day can't be before the first day.") };
+  if (to < today) return { error: msg("Those days have already passed.") };
+  if (await isResend({ supabase, clinic }, form)) {
+    refresh();
+    redirect(`/profile/days-off?${new URLSearchParams({ done: msg("Days off saved") })}`);
+  }
 
   const { data, error } = await supabase
     .from("days_off")
@@ -1052,9 +1108,9 @@ export async function cancelPatientDays(patientId: string, _prev: FormState, for
   const from = isoDate(form, "from_date");
   const to = isoDate(form, "to_date") ?? from;
   const ranges: { from: string; to: string }[] = picked.length ? picked.map((d) => ({ from: d, to: d })) : from && to ? [{ from, to }] : [];
-  if (ranges.length === 0) return { error: "Pick the days to cancel." };
-  if (ranges.some((r) => r.to < r.from)) return { error: "The last day can't be before the first day." };
-  if (ranges.some((r) => r.from < today)) return { error: "Only today or later can be cancelled in advance. Past days are marked from the calendar." };
+  if (ranges.length === 0) return { error: msg("Pick the days to cancel.") };
+  if (ranges.some((r) => r.to < r.from)) return { error: msg("The last day can't be before the first day.") };
+  if (ranges.some((r) => r.from < today)) return { error: msg("Only today or later can be cancelled in advance. Past days are marked from the calendar.") };
 
   // Days already marked are edited, not cancelled in advance.
   const { data: marked } = await supabase
@@ -1064,7 +1120,11 @@ export async function cancelPatientDays(patientId: string, _prev: FormState, for
     .gte("session_date", ranges[0].from)
     .lte("session_date", ranges.at(-1)!.to);
   const clash = (marked ?? []).find((m) => ranges.some((r) => m.session_date >= r.from && m.session_date <= r.to));
-  if (clash) return { error: `${clash.session_date} is already marked — edit that visit from the calendar instead.` };
+  if (clash) {
+    const t = await getT();
+    return { error: t("{date} is already marked — edit that visit from the calendar instead.", { date: t.date(clash.session_date) }) };
+  }
+  if (await isResend({ supabase, clinic }, form)) backToPatient(patientId, "schedule", msg("Days cancelled"));
 
   const { error } = await supabase
     .from("days_off")
@@ -1073,7 +1133,7 @@ export async function cancelPatientDays(patientId: string, _prev: FormState, for
 
   const reschedule = ranges.length === 1 && ranges[0].from === ranges[0].to ? isoDate(form, "reschedule_date") : null;
   if (reschedule) {
-    if (reschedule <= today) return { error: "Pick a new date after today." };
+    if (reschedule <= today) return { error: msg("Pick a new date after today.") };
     const { error: e } = await supabase.from("appointments").insert({
       clinic_id: clinic.id,
       patient_id: patientId,
@@ -1086,9 +1146,10 @@ export async function cancelPatientDays(patientId: string, _prev: FormState, for
   }
 
   refresh();
+  const t = await getT();
   const days = ranges.reduce((n, r) => n + Math.round((Date.parse(r.to) - Date.parse(r.from)) / 86_400_000) + 1, 0);
   const qs = new URLSearchParams({
-    done: `${days} day${days === 1 ? "" : "s"} cancelled${reschedule ? " · make-up booked" : ""}`,
+    done: `${days === 1 ? t("1 day cancelled") : t("{n} days cancelled", { n: days })}${reschedule ? ` · ${t("make-up booked")}` : ""}`,
     notify: ranges.map((r) => (r.from === r.to ? r.from : `${r.from}~${r.to}`)).join(","),
     by,
     ...(reschedule ? { makeup: reschedule } : {}),
@@ -1101,7 +1162,7 @@ export async function restorePatientDay(dayOffId: string, patientId: string) {
   const { supabase } = await getContext();
   const { error } = await supabase.from("days_off").delete().eq("id", dayOffId).eq("patient_id", patientId);
   if (error) throw new Error(error.message);
-  backToPatient(patientId, "overview", "Day restored");
+  backToPatient(patientId, "overview", msg("Day restored"));
 }
 
 // ---------------------------------------------------------------------------
@@ -1120,8 +1181,9 @@ export async function openCase(patientId: string, _prev: FormState, form: FormDa
   const today = todayIn(clinic.timezone);
   const title = text(form, "title");
   const openedOn = isoDate(form, "opened_on") ?? today;
-  if (!title) return { error: "Give the case a short title, e.g. “Right knee — ACL reconstruction”." };
-  if (openedOn > today) return { error: "The case can't start in the future." };
+  if (!title) return { error: msg("Give the case a short title, e.g. “Right knee — ACL reconstruction”.") };
+  if (openedOn > today) return { error: msg("The case can't start in the future.") };
+  if (await isResend({ supabase, clinic }, form)) backToPatient(patientId, "history", msg("Case opened"));
 
   const { data, error } = await supabase
     .from("cases")
@@ -1133,13 +1195,13 @@ export async function openCase(patientId: string, _prev: FormState, form: FormDa
 
   refresh();
   const next = text(form, "then") === "pain" ? `/patients/${patientId}/pain/new?case=${data.id}&kind=initial` : `/patients/${patientId}/cases/${data.id}`;
-  redirect(`${next}${next.includes("?") ? "&" : "?"}${new URLSearchParams({ done: "Case opened" })}`);
+  redirect(`${next}${next.includes("?") ? "&" : "?"}${new URLSearchParams({ done: msg("Case opened") })}`);
 }
 
 export async function updateCase(caseId: string, patientId: string, _prev: FormState, form: FormData): Promise<FormState> {
   const { supabase } = await getContext();
   const title = text(form, "title");
-  if (!title) return { error: "The case needs a title." };
+  if (!title) return { error: msg("The case needs a title.") };
   const openedOn = isoDate(form, "opened_on");
   const { error } = await supabase
     .from("cases")
@@ -1147,21 +1209,21 @@ export async function updateCase(caseId: string, patientId: string, _prev: FormS
     .eq("id", caseId);
   if (error) return { error: dbError(error) };
   refresh();
-  redirect(`/patients/${patientId}/cases/${caseId}?${new URLSearchParams({ done: "Assessment saved" })}`);
+  redirect(`/patients/${patientId}/cases/${caseId}?${new URLSearchParams({ done: msg("Assessment saved") })}`);
 }
 
 export async function dischargeCase(caseId: string, patientId: string, _prev: FormState, form: FormData): Promise<FormState> {
   const { supabase, clinic } = await getContext();
   const closedOn = isoDate(form, "closed_on") ?? todayIn(clinic.timezone);
   const { data: c } = await supabase.from("cases").select("opened_on").eq("id", caseId).single();
-  if (c && closedOn < c.opened_on) return { error: "Discharge can't be before the case opened." };
+  if (c && closedOn < c.opened_on) return { error: msg("Discharge can't be before the case opened.") };
   const { error } = await supabase
     .from("cases")
     .update({ status: "discharged", closed_on: closedOn, discharge_summary: text(form, "discharge_summary") || null })
     .eq("id", caseId);
   if (error) return { error: dbError(error) };
   refresh();
-  redirect(`/patients/${patientId}/cases/${caseId}?${new URLSearchParams({ done: "Patient discharged" })}`);
+  redirect(`/patients/${patientId}/cases/${caseId}?${new URLSearchParams({ done: msg("Patient discharged") })}`);
 }
 
 export async function reopenCase(caseId: string, patientId: string) {
@@ -1169,7 +1231,7 @@ export async function reopenCase(caseId: string, patientId: string) {
   const { error } = await supabase.from("cases").update({ status: "active", closed_on: null }).eq("id", caseId);
   if (error) throw new Error(error.message);
   refresh();
-  redirect(`/patients/${patientId}/cases/${caseId}?${new URLSearchParams({ done: "Case reopened" })}`);
+  redirect(`/patients/${patientId}/cases/${caseId}?${new URLSearchParams({ done: msg("Case reopened") })}`);
 }
 
 const PAIN_LISTS = ["locations", "radiating", "character", "worse_times", "aggravating", "easing", "nerve_symptoms", "red_flags"] as const;
@@ -1181,7 +1243,7 @@ function painAssessmentFrom(form: FormData) {
   for (const k of PAIN_SCORES) {
     const raw = text(form, k);
     const n = raw === "" ? null : Number(raw);
-    if (n !== null && !(Number.isInteger(n) && n >= 0 && n <= 10)) return { error: "Pain scores must be between 0 and 10." };
+    if (n !== null && !(Number.isInteger(n) && n >= 0 && n <= 10)) return { error: msg("Pain scores must be between 0 and 10.") };
     scores[k] = n;
   }
   const lists = Object.fromEntries(PAIN_LISTS.map((k) => [k, [...new Set(form.getAll(k).map(String).filter(Boolean))]])) as Record<
@@ -1221,13 +1283,14 @@ export async function savePainAssessment(patientId: string, _prev: FormState, fo
   const { supabase, clinic } = await getContext();
   const today = todayIn(clinic.timezone);
   const assessed = isoDate(form, "assessed_on") ?? today;
-  if (assessed > today) return { error: "The assessment date can't be in the future." };
+  if (assessed > today) return { error: msg("The assessment date can't be in the future.") };
   const kind = text(form, "kind");
-  if (!["initial", "reassessment", "discharge", "session"].includes(kind)) return { error: "Unknown assessment type." };
+  if (!["initial", "reassessment", "discharge", "session"].includes(kind)) return { error: msg("Unknown assessment type.") };
   const fields = painAssessmentFrom(form);
   if (fields && "error" in fields) return fields;
-  if (!fields) return { error: "Nothing recorded yet — add at least a score, a location or a note." };
+  if (!fields) return { error: msg("Nothing recorded yet — add at least a score, a location or a note.") };
   const caseId = text(form, "case_id") || null;
+  if (await isResend({ supabase, clinic }, form)) backToPatient(patientId, "history", msg("Pain assessment saved"));
 
   const { error } = await supabase
     .from("pain_assessments")
@@ -1236,8 +1299,8 @@ export async function savePainAssessment(patientId: string, _prev: FormState, fo
   refresh();
   redirect(
     caseId
-      ? `/patients/${patientId}/cases/${caseId}?${new URLSearchParams({ done: "Pain assessment saved" })}`
-      : `/patients/${patientId}?${new URLSearchParams({ tab: "history", done: "Pain assessment saved" })}`,
+      ? `/patients/${patientId}/cases/${caseId}?${new URLSearchParams({ done: msg("Pain assessment saved") })}`
+      : `/patients/${patientId}?${new URLSearchParams({ tab: "history", done: msg("Pain assessment saved") })}`,
   );
 }
 
@@ -1254,9 +1317,10 @@ export async function addMeasurement(patientId: string, caseId: string, _prev: F
   const name = text(form, "name");
   const value = Number(text(form, "value").replace(",", "."));
   const on = isoDate(form, "measured_on") ?? today;
-  if (!name) return { error: "What was measured? e.g. “Knee flexion (R)”." };
-  if (text(form, "value") === "" || Number.isNaN(value)) return { error: "Enter the measured value as a number." };
-  if (on > today) return { error: "The date can't be in the future." };
+  if (!name) return { error: msg("What was measured? e.g. “Knee flexion (R)”.") };
+  if (text(form, "value") === "" || Number.isNaN(value)) return { error: msg("Enter the measured value as a number.") };
+  if (on > today) return { error: msg("The date can't be in the future.") };
+  if (await isResend({ supabase, clinic }, form)) return { ok: (await getT())("{name} saved", { name }) };
   const { error } = await supabase.from("measurements").insert({
     clinic_id: clinic.id,
     patient_id: patientId,
@@ -1269,7 +1333,7 @@ export async function addMeasurement(patientId: string, caseId: string, _prev: F
   });
   if (error) return { error: dbError(error) };
   refresh();
-  return { ok: `${name} saved` };
+  return { ok: (await getT())("{name} saved", { name }) };
 }
 
 export async function deleteMeasurement(id: string) {
@@ -1287,7 +1351,7 @@ export async function deleteMeasurement(id: string) {
 export async function saveSessionRecord(sessionId: string, _prev: FormState, form: FormData): Promise<FormState> {
   const { supabase, clinic } = await getContext();
   const { data: s } = await supabase.from("sessions").select("id, patient_id, session_date").eq("id", sessionId).single();
-  if (!s) return { error: "This visit no longer exists." };
+  if (!s) return { error: msg("This visit no longer exists.") };
 
   const kinds = form.getAll("item_kind").map(String);
   const names = form.getAll("item_name").map((v) => String(v).trim());
@@ -1344,28 +1408,28 @@ export async function saveSessionRecord(sessionId: string, _prev: FormState, for
     });
     if (error) return { error: dbError(error) };
   }
-  backToPatient(s.patient_id, "visits", "Session record saved");
+  backToPatient(s.patient_id, "visits", msg("Session record saved"));
 }
 
 export async function addLibraryItem(_prev: FormState, form: FormData): Promise<FormState> {
   const { supabase, clinic } = await getContext();
   const kind = text(form, "kind") === "treatment" ? "treatment" : "exercise";
   const name = text(form, "name");
-  if (!name) return { error: "Enter a name." };
+  if (!name) return { error: msg("Enter a name.") };
   const { error } = await supabase.from("exercise_library").insert({ clinic_id: clinic.id, kind, name, dosage: text(form, "dosage") || null });
-  if (error) return { error: error.code === "23505" ? "That's already on your list." : dbError(error) };
+  if (error) return { error: error.code === "23505" ? msg("That's already on your list.") : dbError(error) };
   refresh();
-  return { ok: `${name} added` };
+  return { ok: (await getT())("{name} added", { name }) };
 }
 
 export async function updateLibraryItem(id: string, _prev: FormState, form: FormData): Promise<FormState> {
   const { supabase } = await getContext();
   const name = text(form, "name");
-  if (!name) return { error: "Name can't be empty." };
+  if (!name) return { error: msg("Name can't be empty.") };
   const { error } = await supabase.from("exercise_library").update({ name, dosage: text(form, "dosage") || null }).eq("id", id);
-  if (error) return { error: error.code === "23505" ? "That name is already on your list." : dbError(error) };
+  if (error) return { error: error.code === "23505" ? msg("That name is already on your list.") : dbError(error) };
   refresh();
-  return { ok: "Saved" };
+  return { ok: msg("Saved") };
 }
 
 export async function setLibraryItemArchived(id: string, archived: boolean) {
@@ -1376,17 +1440,51 @@ export async function setLibraryItemArchived(id: string, archived: boolean) {
 }
 
 // ---------------------------------------------------------------------------
+// Feedback
+// ---------------------------------------------------------------------------
+
+export async function sendFeedback(_prev: FormState, form: FormData): Promise<FormState> {
+  const ctx = await getContext();
+  const kind = text(form, "kind");
+  const message = text(form, "message");
+  if (!["problem", "idea", "praise"].includes(kind)) return { error: msg("Pick what this is about.") };
+  if (!message) return { error: msg("Write a few words first.") };
+  if (message.length > 4000) return { error: msg("That's a bit long — please keep it under 4,000 characters.") };
+  if (await isResend(ctx, form)) return { ok: msg("Thank you! We read every message.") };
+
+  const { error } = await ctx.supabase.from("feedback").insert({
+    clinic_id: ctx.clinic.id,
+    kind,
+    message,
+    reference: text(form, "reference").slice(0, 200) || null,
+    user_agent: ((await headers()).get("user-agent") ?? "").slice(0, 400) || null,
+  });
+  if (error) return { error: dbError(error) };
+  refresh();
+  return { ok: msg("Thank you! We read every message.") };
+}
+
+// ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
+
+/** The app's language for this physio: saved to their profile (for other devices) and this device. */
+export async function setLanguage(locale: string) {
+  if (!isLocale(locale)) return;
+  const { supabase, clinic, userId } = await getContext();
+  await supabase.from("clinic_members").update({ language: locale }).eq("clinic_id", clinic.id).eq("user_id", userId);
+  await setLanguageCookie(locale);
+  refresh();
+}
 
 export async function updateSettings(_prev: FormState, form: FormData): Promise<FormState> {
   const { supabase, clinic, member, userId } = await getContext();
 
   const typed = splitDesignation(text(form, "display_name"));
   const picked = text(form, "designation");
-  if (!isDesignation(picked)) return { error: "Pick a title." };
+  if (!isDesignation(picked)) return { error: msg("Pick a title.") };
   const clinicName = text(form, "clinic_name");
-  if (!typed.name) return { error: "Your name is required." };
+  if (!typed.name) return { error: msg("Your name is required.") };
 
   const { error: memberError } = await supabase
     .from("clinic_members")
@@ -1396,11 +1494,11 @@ export async function updateSettings(_prev: FormState, form: FormData): Promise<
   if (memberError) return { error: memberError.message };
 
   if (member.role === "owner") {
-    if (!clinicName) return { error: "Clinic name is required." };
+    if (!clinicName) return { error: msg("Clinic name is required.") };
     const country = text(form, "country");
-    if (!isCountryCode(country)) return { error: "Pick a country." };
+    if (!isCountryCode(country)) return { error: msg("Pick a country.") };
     const phone = phoneFrom(form, country);
-    if (phone === null) return { error: "Clinic phone doesn't look right." };
+    if (phone === null) return { error: msg("Clinic phone doesn't look right.") };
 
     const { error } = await supabase
       .from("clinics")
@@ -1410,5 +1508,5 @@ export async function updateSettings(_prev: FormState, form: FormData): Promise<
   }
 
   refresh();
-  return { ok: "Saved" };
+  return { ok: msg("Saved") };
 }

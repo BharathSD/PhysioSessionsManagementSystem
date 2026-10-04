@@ -29,6 +29,9 @@ const TABLES = [
   "exercise_library",
   "session_items",
   "patient_summary",
+  "request_keys",
+  "feedback",
+  "clinic_invites",
 ];
 
 beforeAll(async () => {
@@ -72,6 +75,9 @@ beforeAll(async () => {
     [a.clinicId],
   );
   await a.as("insert into day_off_notices (day_off_id, clinic_id, patient_id) values ($1, $2, $3)", [off, a.clinicId, patientA]);
+  await a.as("insert into request_keys (key, clinic_id) values (gen_random_uuid(), $1)", [a.clinicId]);
+  await a.as("insert into feedback (clinic_id, kind, message) values ($1, 'idea', 'Add reminders')", [a.clinicId]);
+  await a.as("insert into clinic_invites (clinic_id) values ($1)", [a.clinicId]);
 });
 
 describe("clinic A can see its own data", () => {

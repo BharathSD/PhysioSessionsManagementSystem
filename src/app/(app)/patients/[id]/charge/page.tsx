@@ -4,30 +4,33 @@ import { PageHeader } from "@/components/ui";
 import { getContext } from "@/lib/context";
 import { todayIn } from "@/lib/format";
 import { loadPatient } from "@/lib/patient";
+import { msg } from "@/i18n";
+import { getT, titled } from "@/i18n/server";
 import { addCharge } from "../../../actions";
 
-export const metadata = { title: "Charge or discount" };
+export const generateMetadata = titled(msg("Charge or discount"));
 
 export default async function ChargePage(props: PageProps<"/patients/[id]/charge">) {
   const { id } = await props.params;
   const ctx = await getContext();
   const p = await loadPatient(ctx, id);
+  const t = await getT();
   const today = todayIn(ctx.clinic.timezone);
 
   return (
     <div>
       <PageHeader
         back={{ href: `/patients/${p.id}?tab=account`, label: p.name }}
-        title="Charge or discount"
-        subtitle="For anything that isn't a visit or package — equipment, reports, a discount or a write-off."
+        title={t("Charge or discount")}
+        subtitle={t("For anything that isn't a visit or package — equipment, reports, a discount or a write-off.")}
       />
-      <ActionForm action={addCharge.bind(null, p.id)} submitLabel="Save" className="card space-y-5">
+      <ActionForm action={addCharge.bind(null, p.id)} submitLabel={t("Save")} className="card space-y-5">
         <fieldset className="field">
-          <legend className="mb-1.5">Type</legend>
+          <legend className="mb-1.5">{t("Type")}</legend>
           <div className="grid grid-cols-2 gap-2">
             {[
-              { value: "charge", label: "Extra charge", hint: "Adds to what they owe" },
-              { value: "discount", label: "Discount", hint: "Reduces what they owe" },
+              { value: "charge", label: t("Extra charge"), hint: t("Adds to what they owe") },
+              { value: "discount", label: t("Discount"), hint: t("Reduces what they owe") },
             ].map((o) => (
               <label
                 key={o.value}
@@ -41,14 +44,14 @@ export default async function ChargePage(props: PageProps<"/patients/[id]/charge
           </div>
         </fieldset>
         <label className="field">
-          <span>What is it for?</span>
-          <input name="description" required placeholder="e.g. Knee brace, Senior citizen discount" />
+          <span>{t("What is it for?")}</span>
+          <input name="description" required placeholder={t("e.g. Knee brace, Senior citizen discount")} />
         </label>
         <label className="field">
-          <span>Amount</span>
-          <input name="amount" inputMode="decimal" required placeholder="e.g. 800" className="!text-2xl font-semibold" />
+          <span>{t("Amount")}</span>
+          <input name="amount" inputMode="decimal" required placeholder={t("e.g. 800")} className="!text-2xl font-semibold" />
         </label>
-        <DateField name="charge_date" label="Date" today={today} defaultValue={today} max={today} shortcuts={["today", "yesterday"]} required />
+        <DateField name="charge_date" label={t("Date")} today={today} defaultValue={today} max={today} shortcuts={["today", "yesterday"]} required />
       </ActionForm>
     </div>
   );

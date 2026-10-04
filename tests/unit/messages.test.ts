@@ -9,6 +9,8 @@ const patient: PatientSummary = {
   clinic_id: "c",
   name: "Rahul",
   title: "",
+  physio_id: null,
+  language: "en",
   phone: "+919876543210",
   condition: null,
   archived: false,
@@ -58,6 +60,27 @@ describe("WhatsApp receipts", () => {
     );
     expect(text).toContain("₹500 paid in advance");
     expect(text).toContain("Pain: 8 → 3");
+  });
+});
+
+describe("messages in the patient's language", () => {
+  it("are in Hindi for a Hindi-speaking patient, with Hindi dates and Indian money format", () => {
+    const text = sessionReceipt({ ...patient, language: "hi" }, session(), sender, "2026-10-05", "In-clinic session");
+    expect(text).toContain("नमस्ते Rahul,");
+    expect(text).toContain("✅ क्लिनिक सेशन हो गया – 2 अक्टू॰ 2026");
+    expect(text).toContain("पैकेज के 3 सेशन बाकी · ₹1,500 बाकी");
+    expect(text).toContain("UPI से भुगतान करें: priya@okhdfc");
+    expect(text).toContain("– Dr. Priya, Priya Physio");
+  });
+
+  it("fall back to English for an unknown language", () => {
+    expect(paymentReceipt({ ...patient, language: "xx" }, { amount: 500, method: "cash", paid_on: "2026-10-01" }, sender)).toMatch(/^Hi Rahul,/);
+  });
+
+  it("tell about a closure in Hindi", () => {
+    const text = closureNotice("Rahul", { from_date: "2026-10-20", to_date: "2026-10-24", reason: "दिवाली" }, ["2026-10-21"], null, sender, "hi");
+    expect(text).toContain("Priya Physio 20 अक्टू॰ – 24 अक्टू॰ तक बंद रहेगा (दिवाली).");
+    expect(text).toContain("कोई शुल्क नहीं");
   });
 });
 

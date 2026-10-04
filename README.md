@@ -13,6 +13,10 @@ Track physiotherapy session packages, attendance and payments: a simple manageme
 - **Date fields**: type a date (`02/10/2026`, `2/10`, `02102026`, `today`), pick it from a calendar, or tap a shortcut.
 - **Phone numbers**: country picker (clinic's country by default), stored in international format.
 - **Case history**: one case per problem — free-text initial assessment, pain assessments with a tap-to-mark body chart (each kept as history), measurements with progress charts, exercises/treatments/notes per session ("same as last time"), timeline, discharge summary.
+- **Clinic teams**: invite physios with a one-time link (`/join/…`). Owners manage fees, visit types, clinic days off and the team; everyone works with all the clinic's patients, with a "My patients / Everyone" filter, a main physio per patient, and who recorded each visit and payment. A solo physio is a team of one.
+- **Hindi** (and room for more languages): each physio picks the app's language (saved to their profile, so it follows them to any phone); each patient gets WhatsApp messages in their own language. See `src/i18n/` — adding a language is one dictionary file; `npm test` fails if any text is missing a translation.
+- **Weak signal**: a save made without signal waits and goes through when it's back (Next.js `experimental.useOffline`), with an offline banner and "Waiting for signal…" buttons; a resent save is recognised so nothing is recorded twice. Opening the app with no signal shows a friendly page (a small service worker; nothing with patient data is cached).
+- **Help & feedback**: report a problem (error screens link to it), suggest an idea, or chat on WhatsApp with support. Feedback lands in the `feedback` table.
 - **Installable PWA** for Android, iPhone and desktop from a single codebase.
 
 Stack: Next.js 16 (App Router, server actions), Tailwind CSS 4, Supabase (Postgres, Auth, row-level security).
@@ -27,6 +31,7 @@ Stack: Next.js 16 (App Router, server actions), Tailwind CSS 4, Supabase (Postgr
    ```bash
    cp .env.example .env.local
    # fill in values from Project Settings → API (project URL + publishable key)
+   # optional: NEXT_PUBLIC_SUPPORT_WHATSAPP=919876543210 shows a "Chat with us on WhatsApp" button
    ```
 5. **Run**:
    ```bash
@@ -92,8 +97,10 @@ Every table carries `clinic_id`, and RLS restricts each user to clinics they bel
 | `src/app/(app)/page.tsx` | Home: today at a glance, needs attention, next 7 days, this month |
 | `src/app/(app)/today/` | Today: one-tap Present / Absent, receipts, pain score, off today |
 | `src/app/(app)/patients/` | Patient list, add-patient wizard, patient page (Overview, Visits, Account, Schedule) and its task screens |
-| `src/app/(app)/profile/` | Profile, fees & visit types, days off + notify patients |
+| `src/app/(app)/profile/` | Profile, language, team, fees & visit types, days off + notify patients, help & feedback |
 | `src/app/(app)/actions.ts` | All server actions (writes) |
+| `src/app/team-actions.ts`, `src/app/join/`, `src/app/welcome/` | Clinic teams: invites, roles, joining, leaving |
+| `src/i18n/` | Translations: `t("English text")`, the Hindi dictionary, server (`getT`) and client (`useT`) helpers |
 | `src/lib/fees.ts` | Dated fee lookup and how each visit is priced (package or fee) |
 | `src/lib/schedule.ts` | Plan maths: who's expected on a day, next visit, projected package end |
 | `src/lib/overview.ts` | Overview figures: attendance, adherence, dues since, recent activity |
@@ -105,5 +112,5 @@ Every table carries `clinic_id`, and RLS restricts each user to clinics they bel
 
 ## Roadmap
 
-- **Later**: session times, home exercise programme on WhatsApp, standard outcome questionnaires, patient "passbook" link + UPI pay button, reports, offline mode
-- **v2**: patient login, clinics with multiple physios and invites, automatic WhatsApp (Business API)
+- **Later**: session times, home exercise programme on WhatsApp, standard outcome questionnaires, patient "passbook" link + UPI pay button, reports, more languages (Marathi, Tamil, Telugu…), marking attendance fully offline
+- **v2**: patient login, one login in several clinics, automatic WhatsApp (Business API)

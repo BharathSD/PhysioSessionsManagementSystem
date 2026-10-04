@@ -1,6 +1,7 @@
 // Calculations for a patient's Overview tab. Plain functions over data already
 // loaded for the patient page, so they're easy to test.
 
+import type { T } from "@/i18n";
 import type { DayOff } from "./days-off";
 import { addDays, isActiveOn, isScheduledDay, mondayOf, planVisitType, type Plan } from "./schedule";
 import type { Appointment, Charge, Package, Payment, Rate, Session } from "./types";
@@ -127,6 +128,7 @@ export function recentActivity(
     fee: (r: Rate) => string;
     money: (n: number) => string;
     date: (d: string) => string;
+    t: T;
   },
   limit = 6,
 ): ActivityItem[] {
@@ -136,15 +138,15 @@ export function recentActivity(
     ...input.bookings.map((b) => ({
       date: b.booked_on,
       kind: "booking" as const,
-      title: `Booked a session for ${label.date(b.scheduled_date)}`,
-      detail: b.status === "cancelled" ? "Booking cancelled" : undefined,
+      title: label.t("Booked a session for {date}", { date: label.date(b.scheduled_date) }),
+      detail: b.status === "cancelled" ? label.t("Booking cancelled") : undefined,
     })),
-    ...input.plans.map((p) => ({ date: p.valid_from, kind: "schedule" as const, title: `Schedule: ${label.plan(p)}`, detail: p.note ?? undefined })),
+    ...input.plans.map((p) => ({ date: p.valid_from, kind: "schedule" as const, title: label.t("Schedule: {plan}", { plan: label.plan(p) }), detail: p.note ?? undefined })),
     ...input.rates.map((r) => ({ date: r.effective_from, kind: "fee" as const, title: label.fee(r) })),
     ...input.charges.map((c) => ({
       date: c.charge_date,
       kind: "charge" as const,
-      title: `${Number(c.amount) < 0 ? "Discount" : "Charge"}: ${c.description}`,
+      title: Number(c.amount) < 0 ? label.t("Discount: {what}", { what: c.description }) : label.t("Charge: {what}", { what: c.description }),
       detail: label.money(Math.abs(Number(c.amount))),
     })),
   ];

@@ -2,12 +2,13 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui";
 import { getBilling } from "@/lib/billing";
 import { getContext } from "@/lib/context";
-import { formatDate } from "@/lib/format";
+import { msg } from "@/i18n";
+import { getT, titled } from "@/i18n/server";
 import { loadPatient } from "@/lib/patient";
 import { saveSessionRecord } from "../../../../../actions";
 import { RecordForm, type RecordItem } from "./record-form";
 
-export const metadata = { title: "Session record" };
+export const generateMetadata = titled(msg("Session record"));
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -16,6 +17,7 @@ export default async function SessionRecordPage(props: PageProps<"/patients/[id]
   if (!UUID.test(sessionId)) notFound();
   const ctx = await getContext();
   const p = await loadPatient(ctx, id);
+  const t = await getT();
   const { supabase } = ctx;
   const { data: s } = await supabase.from("sessions").select("id, session_date, visit_type_id, notes, case_id").eq("id", sessionId).eq("patient_id", p.id).maybeSingle();
   if (!s) notFound();
@@ -45,8 +47,8 @@ export default async function SessionRecordPage(props: PageProps<"/patients/[id]
     <div>
       <PageHeader
         back={{ href: `/patients/${p.id}?tab=visits`, label: p.name }}
-        title="Session record"
-        subtitle={`${formatDate(s.session_date)} · ${typeName(s.visit_type_id)}`}
+        title={t("Session record")}
+        subtitle={`${t.date(s.session_date)} · ${typeName(s.visit_type_id)}`}
       />
       <RecordForm
         action={saveSessionRecord.bind(null, s.id)}

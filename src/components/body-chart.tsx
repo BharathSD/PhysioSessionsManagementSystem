@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useT } from "@/i18n/client";
 import { BODY_REGIONS, regionLabel, type View } from "@/lib/pain";
 
 type Mark = "pain" | "radiating";
@@ -24,6 +25,7 @@ export function BodyChart({
     ...Object.fromEntries(defaultLocations.map((k) => [k, "pain" as const])),
   }));
 
+  const t = useT();
   const cycle = (key: string) =>
     setMarks((m) => {
       const next = { ...m };
@@ -38,7 +40,7 @@ export function BodyChart({
   const figure = (view: View) => (
     <figure className="flex flex-1 flex-col items-center">
       {/* Stacked on phones so each region is big enough to tap with a finger. */}
-      <svg viewBox="0 0 120 240" className={`h-auto w-full ${readOnly ? "max-w-[150px]" : "max-w-[300px] sm:max-w-[190px]"}`} role="group" aria-label={`Body chart, ${view}`}>
+      <svg viewBox="0 0 120 240" className={`h-auto w-full ${readOnly ? "max-w-[150px]" : "max-w-[300px] sm:max-w-[190px]"}`} role="group" aria-label={view === "front" ? t("Body chart, front") : t("Body chart, back")}>
         <defs>
           <pattern id={`hatch-${view}`} width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
             <rect width="4" height="4" fill="var(--warn-soft)" />
@@ -62,7 +64,7 @@ export function BodyChart({
               role={readOnly ? undefined : "button"}
               tabIndex={readOnly ? undefined : 0}
               aria-pressed={readOnly ? undefined : Boolean(mark)}
-              aria-label={`${r.label}${mark ? ` — ${mark === "pain" ? "pain" : "radiating"}` : ""}`}
+              aria-label={`${t(r.label)}${mark ? ` — ${mark === "pain" ? t("pain") : t("radiating")}` : ""}`}
               className={readOnly ? undefined : "cursor-pointer"}
               onClick={readOnly ? undefined : () => cycle(r.key)}
               onKeyDown={
@@ -76,13 +78,14 @@ export function BodyChart({
                     }
               }
             >
-              <title>{r.label}</title>
+              <title>{t(r.label)}</title>
             </rect>
           );
         })}
       </svg>
       <figcaption className="mt-1 text-xs text-muted">
-        {view === "front" ? "Front" : "Back"} <span className="opacity-70">(patient&apos;s R is on the {view === "front" ? "left" : "right"})</span>
+        {view === "front" ? t("Front") : t("Back")}{" "}
+        <span className="opacity-70">{view === "front" ? t("(patient's R is on the left)") : t("(patient's R is on the right)")}</span>
       </figcaption>
     </figure>
   );
@@ -95,10 +98,10 @@ export function BodyChart({
         {figure("front")}
         {figure("back")}
       </div>
-      {!readOnly && <p className="text-sm text-muted">Tap once for pain, again if it spreads (radiates) there, a third time to clear.</p>}
+      {!readOnly && <p className="text-sm text-muted">{t("Tap once for pain, again if it spreads (radiates) there, a third time to clear.")}</p>}
       <div className="flex flex-wrap gap-1.5 text-sm">
         {picked.length === 0 ? (
-          <span className="text-muted">No areas marked.</span>
+          <span className="text-muted">{t("No areas marked.")}</span>
         ) : (
           picked.map((r) => (
             <span
@@ -106,7 +109,7 @@ export function BodyChart({
               className={`chip py-1 ${marks[r.key] === "pain" ? "bg-bad-soft text-bad" : "bg-warn-soft text-warn"}`}
             >
               {marks[r.key] === "pain" ? "● " : "↝ "}
-              {regionLabel(r.key)}
+              {t(regionLabel(r.key))}
             </span>
           ))
         )}

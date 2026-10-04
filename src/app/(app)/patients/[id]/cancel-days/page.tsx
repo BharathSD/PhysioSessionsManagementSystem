@@ -3,11 +3,13 @@ import { DateField } from "@/components/date-field";
 import { PageHeader } from "@/components/ui";
 import { getContext } from "@/lib/context";
 import { firstParam } from "@/lib/data";
-import { formatDay, todayIn } from "@/lib/format";
+import { todayIn } from "@/lib/format";
+import { msg } from "@/i18n";
+import { getT, titled } from "@/i18n/server";
 import { loadPatient } from "@/lib/patient";
 import { cancelPatientDays } from "../../../actions";
 
-export const metadata = { title: "Cancel days" };
+export const generateMetadata = titled(msg("Cancel days"));
 
 /**
  * Cancel one patient's sessions in advance: the days picked on the calendar or
@@ -17,6 +19,7 @@ export default async function CancelDaysPage(props: PageProps<"/patients/[id]/ca
   const [{ id }, sp] = await Promise.all([props.params, props.searchParams]);
   const ctx = await getContext();
   const p = await loadPatient(ctx, id);
+  const t = await getT();
   const today = todayIn(ctx.clinic.timezone);
   const dates = firstParam(sp.dates)
     .split(",")
@@ -28,26 +31,30 @@ export default async function CancelDaysPage(props: PageProps<"/patients/[id]/ca
     <div>
       <PageHeader
         back={{ href: `/patients/${p.id}`, label: p.name }}
-        title={dates.length ? `Cancel ${dates.length === 1 ? "this day" : `${dates.length} days`}` : "Take a break"}
-        subtitle={dates.length ? dates.map(formatDay).join(" · ") : `Pause ${p.name}'s sessions between two dates — the schedule resumes after.`}
+        title={dates.length === 0 ? t("Take a break") : dates.length === 1 ? t("Cancel this day") : t("Cancel {n} days", { n: dates.length })}
+        subtitle={
+          dates.length
+            ? dates.map((d) => t.day(d)).join(" · ")
+            : t("Pause {name}'s sessions between two dates — the schedule resumes after.", { name: p.name })
+        }
       />
-      <ActionForm action={cancelPatientDays.bind(null, p.id)} submitLabel={dates.length ? "Cancel sessions" : "Save break"} className="card space-y-5">
+      <ActionForm action={cancelPatientDays.bind(null, p.id)} submitLabel={dates.length ? t("Cancel sessions") : t("Save break")} className="card space-y-5">
         {dates.map((d) => (
           <input key={d} type="hidden" name="dates" value={d} />
         ))}
         {dates.length === 0 && (
           <div className="grid gap-3 sm:grid-cols-2">
-            <DateField name="from_date" label="From" today={today} min={today} shortcuts={["today", "tomorrow"]} required />
-            <DateField name="to_date" label="Until (and including)" today={today} min={today} shortcuts={[]} required />
+            <DateField name="from_date" label={t("From")} today={today} min={today} shortcuts={["today", "tomorrow"]} required />
+            <DateField name="to_date" label={t("Until (and including)")} today={today} min={today} shortcuts={[]} required />
           </div>
         )}
 
         <fieldset className="field">
-          <legend className="mb-1.5">Who cancelled?</legend>
+          <legend className="mb-1.5">{t("Who cancelled?")}</legend>
           <div className="grid grid-cols-2 gap-2">
             {[
-              { value: "patient", label: "The patient", hint: "Travelling, unwell, other plans" },
-              { value: "clinic", label: "Me / the clinic", hint: "I'm not available" },
+              { value: "patient", label: t("The patient"), hint: t("Travelling, unwell, other plans") },
+              { value: "clinic", label: t("Me / the clinic"), hint: t("I'm not available") },
             ].map((o) => (
               <label
                 key={o.value}
@@ -63,9 +70,9 @@ export default async function CancelDaysPage(props: PageProps<"/patients/[id]/ca
 
         <label className="field">
           <span>
-            Reason <em>(optional)</em>
+            {t("Reason")} <em>{t("(optional)")}</em>
           </span>
-          <input name="reason" placeholder="e.g. travelling, exams, wedding" />
+          <input name="reason" placeholder={t("e.g. travelling, exams, wedding")} />
         </label>
 
         {single && (
@@ -75,7 +82,7 @@ export default async function CancelDaysPage(props: PageProps<"/patients/[id]/ca
               name="reschedule_date"
               label={
                 <span>
-                  Book a make-up session <em>(optional)</em>
+                  {t("Book a make-up session")} <em>{t("(optional)")}</em>
                 </span>
               }
               today={today}
@@ -85,7 +92,7 @@ export default async function CancelDaysPage(props: PageProps<"/patients/[id]/ca
           </div>
         )}
 
-        <p className="text-sm text-muted">Cancelled in advance — no charge, and no package session is used. You can restore the day later.</p>
+        <p className="text-sm text-muted">{t("Cancelled in advance — no charge, and no package session is used. You can restore the day later.")}</p>
       </ActionForm>
     </div>
   );

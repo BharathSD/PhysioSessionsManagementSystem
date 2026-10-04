@@ -17,12 +17,15 @@ export type Member = {
   role: "owner" | "physio";
   display_name: string; // without the designation — see physioName()
   designation: string; // "Dr.", "Prof.", "Mr.", "Ms.", "Mrs." or ""
+  language?: string; // app language ("en", "hi")
 };
 
 export type PatientSummary = {
   id: string;
   clinic_id: string;
   title: string; // "Mr.", "Mrs.", … or "" — see patientName()
+  physio_id: string | null; // main physio, in a clinic with several
+  language: string; // their WhatsApp messages' language ("en", "hi")
   name: string;
   phone: string | null;
   condition: string | null;
@@ -62,6 +65,7 @@ export type Session = {
   session_date: string;
   status: SessionStatus;
   notes: string | null;
+  recorded_by?: string | null; // who marked it (shown in a clinic team)
   created_at: string;
 };
 
@@ -73,6 +77,7 @@ export type Payment = {
   method: PaymentMethod;
   paid_on: string;
   note: string | null;
+  recorded_by?: string | null;
 };
 
 export type Appointment = {
@@ -86,7 +91,13 @@ export type Appointment = {
   note: string | null;
 };
 
-export type VisitType = { id: string; name: string; sort: number; archived: boolean };
+export type VisitType = {
+  id: string;
+  name: string;
+  sort: number;
+  archived: boolean;
+  original?: string; // the name as saved, when `name` is shown translated (getBilling)
+};
 
 export type RateKind = "visit" | "no_show" | "cancellation";
 

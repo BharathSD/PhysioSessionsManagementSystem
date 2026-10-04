@@ -8,33 +8,47 @@ import { VisitCost } from "@/components/visit-cost";
 import { getBilling } from "@/lib/billing";
 import { getBoard, type BoardRow } from "@/lib/board";
 import { getContext } from "@/lib/context";
+import { getTeam, whoFrom } from "@/lib/team";
+import { WhoFilter } from "@/components/who-filter";
 import { addressLines, mapsLink, type Address } from "@/lib/address";
 import { patientName, physioName } from "@/lib/names";
 import { firstParam } from "@/lib/data";
 import { canChargeMiss } from "@/lib/fees";
-import { formatDate, todayIn, whatsappLink } from "@/lib/format";
+import { todayIn, whatsappLink } from "@/lib/format";
+import { getT } from "@/i18n/server";
+import type { T } from "@/i18n";
 import { sessionReceipt } from "@/lib/messages";
 import { describeOff } from "@/lib/days-off";
 import { STATUS } from "@/lib/status";
 import type { Clinic, Rate } from "@/lib/types";
 import { deleteSession, markToday } from "../actions";
 
-export const metadata = { title: "Today" };
+export async function generateMetadata() {
+  const t = await getT();
+  return { title: t("Today") };
+}
 
 type RowContext = {
+  t: T;
   sender: { clinic: Clinic; physioName: string };
   addresses: Map<string, { text: string; link: string }>;
   rates: Rate[];
   typeName: (id: string | null | undefined) => string;
+  savedTypeName: (id: string | null | undefined) => string;
+  isHomeVisit: (id: string | null | undefined) => boolean;
   today: string;
 };
 
 export default async function TodayPage(props: PageProps<"/today">) {
-  const q = firstParam((await props.searchParams).q);
+  const sp = await props.searchParams;
+  const q = firstParam(sp.q);
   const ctx = await getContext();
+  const t = await getT();
+  const team = await getTeam();
+  const who = team.isTeam ? whoFrom(firstParam(sp.who), ctx.member) : "all";
   const today = todayIn(ctx.clinic.timezone);
-  const [{ expected, others, offToday, clinicClosed, seen }, { rates, typeName }, { data: withAddress }] = await Promise.all([
-    getBoard(ctx, today, q),
+  const [{ expected, others, offToday, clinicClosed, seen }, { rates, typeName, savedTypeName, isHomeVisit }, { data: withAddress }] = await Promise.all([
+    getBoard(ctx, today, q, who === "mine" ? ctx.userId : undefined),
     getBilling(),
     ctx.supabase
       .from("patients")
@@ -43,66 +57,75 @@ export default async function TodayPage(props: PageProps<"/today">) {
       .or("address.not.is.null,address_line2.not.is.null,city.not.is.null,latitude.not.is.null"),
   ]);
   const rc: RowContext = {
+    t,
     sender: { clinic: ctx.clinic, physioName: physioName(ctx.member) },
     addresses: new Map(
       ((withAddress ?? []) as (Address & { id: string })[]).map((a) => [
         a.id,
-        { text: addressLines(a, ctx.clinic.country).join(", ") || "Pinned on the map", link: mapsLink(a, ctx.clinic.country)! },
+        { text: addressLines(a, ctx.clinic.country).join(", ") || t("Pinned on the map"), link: mapsLink(a, ctx.clinic.country)! },
       ]),
     ),
     rates,
     typeName,
+    savedTypeName,
+    isHomeVisit,
     today,
   };
   const done = expected.filter((r) => r.session).length;
 
   return (
     <div>
-      <PageHeader title="Today" subtitle={`${formatDate(today)} · ${seen} seen`} />
+      <PageHeader title={t("Today")} subtitle={`${t.date(today)} · ${t("{n} seen", { n: seen })}`} />
 
       {clinicClosed && (
         <div className="mb-3 flex items-start gap-3 rounded-2xl bg-warn-soft p-3 text-base">
           <Icon name="ban" className="mt-0.5 size-5 shrink-0 text-warn" />
           <span className="flex-1">
-            <span className="block font-semibold text-warn">Clinic closed today{clinicClosed.reason ? ` · ${clinicClosed.reason}` : ""}</span>
-            <span className="block text-sm text-muted">Scheduled sessions are cancelled. You can still mark anyone who comes.</span>
+            <span className="block font-semibold text-warn">
+              {t("Clinic closed today")}
+              {clinicClosed.reason ? ` · ${clinicClosed.reason}` : ""}
+            </span>
+            <span className="block text-sm text-muted">{t("Scheduled sessions are cancelled. You can still mark anyone who comes.")}</span>
           </span>
           <Link href="/profile/days-off" className="text-sm font-medium text-brand">
-            Change
+            {t("Change")}
           </Link>
         </div>
       )}
 
+      {team.isTeam && <WhoFilter who={who} hrefs={{ mine: `/today?${new URLSearchParams({ who: "mine", ...(q ? { q } : {}) })}`, all: `/today?${new URLSearchParams({ who: "all", ...(q ? { q } : {}) })}` }} />}
       <form role="search" className="relative mb-2">
+        {team.isTeam && <input type="hidden" name="who" value={who} />}
         <Icon name="search" className="pointer-events-none absolute top-1/2 left-3.5 size-5 -translate-y-1/2 text-muted" />
         <input
           name="q"
           defaultValue={q}
-          placeholder="Find a patient…"
+          placeholder={t("Find a patient…")}
           className="min-h-12 w-full rounded-2xl border border-border bg-surface pr-20 pl-11 text-base outline-none focus:border-brand"
         />
         {q && (
-          <Link href="/today" className="absolute top-1/2 right-2 -translate-y-1/2 rounded-xl px-3 py-2 text-sm text-brand">
-            Clear
+          <Link href={team.isTeam ? `/today?who=${who}` : "/today"} className="absolute top-1/2 right-2 -translate-y-1/2 rounded-xl px-3 py-2 text-sm text-brand">
+            {t("Clear")}
           </Link>
         )}
       </form>
 
       {expected.length + others.length === 0 ? (
         <div className="mt-4">
-          <EmptyState title={q ? `No patient called “${q}”` : "No patients yet"}>
+          <EmptyState title={q ? t("No patient called “{q}”", { q }) : who === "mine" ? t("No patients of yours yet") : t("No patients yet")}>
+            {who === "mine" && !q && <p>{t("Patients are yours when you're their main physio. See Everyone for the whole clinic.")}</p>}
             {!q && (
               <Link href="/patients/new" className="btn btn-primary mt-2">
-                <Icon name="plus" /> Add your first patient
+                <Icon name="plus" /> {t("Add your first patient")}
               </Link>
             )}
           </EmptyState>
         </div>
       ) : (
         <>
-          <SectionTitle aside={expected.length > 0 ? `${done} of ${expected.length} marked` : undefined}>Expected today</SectionTitle>
+          <SectionTitle aside={expected.length > 0 ? t("{done} of {total} marked", { done, total: expected.length }) : undefined}>{t("Expected today")}</SectionTitle>
           {expected.length === 0 ? (
-            <p className="card text-base text-muted">No one is scheduled today. Patients with a schedule or a booking will appear here.</p>
+            <p className="card text-base text-muted">{t("No one is scheduled today. Patients with a schedule or a booking will appear here.")}</p>
           ) : (
             <ul className="space-y-2.5">
               {expected.map((r) => (
@@ -113,7 +136,7 @@ export default async function TodayPage(props: PageProps<"/today">) {
 
           {offToday.length > 0 && (
             <>
-              <SectionTitle>Off today (cancelled in advance)</SectionTitle>
+              <SectionTitle>{t("Off today (cancelled in advance)")}</SectionTitle>
               <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
                 {offToday.map((r) => (
                   <li key={r.p.id}>
@@ -121,7 +144,7 @@ export default async function TodayPage(props: PageProps<"/today">) {
                       <Icon name="ban" className="size-5 shrink-0 text-muted" />
                       <span className="min-w-0 flex-1">
                         <span className="block font-medium">{patientName(r.p)}</span>
-                        <span className="block text-sm text-muted">{r.off && describeOff(r.off)}</span>
+                        <span className="block text-sm text-muted">{r.off && describeOff(r.off, t)}</span>
                       </span>
                       <Icon name="chevron" className="size-5 text-muted" />
                     </Link>
@@ -134,9 +157,9 @@ export default async function TodayPage(props: PageProps<"/today">) {
           {others.length > 0 && (
             <details className="group" open={Boolean(q) || expected.length === 0}>
               <summary className="mt-7 mb-2.5 flex min-h-11 cursor-pointer list-none items-center justify-between rounded-xl px-1 text-sm font-semibold tracking-wide text-muted uppercase">
-                <span>Walk-ins & others ({others.length})</span>
-                <span className="text-brand normal-case group-open:hidden">Show</span>
-                <span className="hidden text-brand normal-case group-open:inline">Hide</span>
+                <span>{t("Walk-ins & others ({n})", { n: others.length })}</span>
+                <span className="text-brand normal-case group-open:hidden">{t("Show")}</span>
+                <span className="hidden text-brand normal-case group-open:inline">{t("Hide")}</span>
               </summary>
               <ul className="space-y-2.5">
                 {others.map((r) => (
@@ -153,10 +176,11 @@ export default async function TodayPage(props: PageProps<"/today">) {
 
 function PatientRow({ row, rc }: { row: BoardRow; rc: RowContext }) {
   const { p, session, expected, next, visitTypeId } = row;
+  const { t } = rc;
   const status = session ? STATUS[session.status] : null;
   const sessionType = session?.visit_type_id ?? visitTypeId;
   // Home visits show where to go.
-  const address = /home/i.test(rc.typeName(sessionType)) ? rc.addresses.get(p.id) : undefined;
+  const address = rc.isHomeVisit(sessionType) ? rc.addresses.get(p.id) : undefined;
 
   return (
     <li className="card">
@@ -172,7 +196,7 @@ function PatientRow({ row, rc }: { row: BoardRow; rc: RowContext }) {
           {status && (
             <span className={`chip shrink-0 gap-1 py-1 text-sm ${status.className}`}>
               <Icon name={status.icon} className="size-4" />
-              {status.short}
+              {t(status.short)}
             </span>
           )}
         </div>
@@ -190,7 +214,7 @@ function PatientRow({ row, rc }: { row: BoardRow; rc: RowContext }) {
           className="mt-2 flex items-start gap-2 rounded-xl bg-surface-2 px-3 py-2 text-sm"
         >
           <span className="min-w-0 flex-1 truncate">📍 {address.text}</span>
-          <span className="shrink-0 font-medium text-brand">Maps</span>
+          <span className="shrink-0 font-medium text-brand">{t("Maps")}</span>
         </a>
       )}
 
@@ -198,13 +222,13 @@ function PatientRow({ row, rc }: { row: BoardRow; rc: RowContext }) {
         <>
           <div className="mt-3 grid grid-cols-[1fr_2fr] gap-2">
             <form action={markToday.bind(null, p.id, "missed", visitTypeId)}>
-              <SubmitButton className="btn btn-bad w-full text-base" aria-label={`Mark ${p.name} absent`}>
-                <Icon name="x" /> Absent
+              <SubmitButton className="btn btn-bad w-full text-base" aria-label={t("Mark {name} absent", { name: p.name })}>
+                <Icon name="x" /> {t("Absent")}
               </SubmitButton>
             </form>
             <form action={markToday.bind(null, p.id, "attended", visitTypeId)}>
-              <SubmitButton className="btn btn-ok w-full text-base" aria-label={`Mark ${p.name} present`}>
-                <Icon name="check" /> Present
+              <SubmitButton className="btn btn-ok w-full text-base" aria-label={t("Mark {name} present", { name: p.name })}>
+                <Icon name="check" /> {t("Present")}
               </SubmitButton>
             </form>
           </div>
@@ -212,7 +236,7 @@ function PatientRow({ row, rc }: { row: BoardRow; rc: RowContext }) {
             href={`/patients/${p.id}/attendance`}
             className="mt-2 flex min-h-10 items-center justify-center gap-1 text-sm font-medium text-brand"
           >
-            Cancelled, rescheduled or different visit type?
+            {t("Cancelled, rescheduled or different visit type?")}
             <Icon name="chevron" className="size-4" />
           </Link>
         </>
@@ -236,27 +260,27 @@ function PatientRow({ row, rc }: { row: BoardRow; rc: RowContext }) {
             <div className="mt-3">
               <QuickPain sessionId={session.id} score={session.pain_score} editHref={`/patients/${p.id}/visits/${session.id}`} />
               <Link href={`/patients/${p.id}/visits/${session.id}/record`} className="mt-2 inline-block text-sm font-medium text-brand">
-                + Exercises &amp; notes
+                {t("+ Exercises & notes")}
               </Link>
             </div>
           )}
           <div className="mt-3 flex gap-2">
             {p.phone ? (
               <a
-                href={whatsappLink(p.phone, sessionReceipt(p, session, rc.sender, next, rc.typeName(session.visit_type_id)))}
+                href={whatsappLink(p.phone, sessionReceipt(p, session, rc.sender, next, rc.savedTypeName(session.visit_type_id)))}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="btn btn-whatsapp flex-1 text-base"
               >
-                <Icon name="message" /> Send receipt
+                <Icon name="message" /> {t("Send receipt")}
               </a>
             ) : (
               <Link href={`/patients/${p.id}/edit`} className="btn flex-1 text-muted">
-                Add phone number to send receipt
+                {t("Add phone number to send receipt")}
               </Link>
             )}
             <form action={deleteSession.bind(null, session.id)}>
-              <SubmitButton className="btn text-base text-muted">Undo</SubmitButton>
+              <SubmitButton className="btn text-base text-muted">{t("Undo")}</SubmitButton>
             </form>
           </div>
         </>

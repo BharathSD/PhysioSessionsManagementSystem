@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useT } from "@/i18n/client";
 
 /**
  * The patient's own activities rated 0–10 (0 = can't do it, 10 = as before).
@@ -9,6 +10,7 @@ import { useState } from "react";
 export function ActivityRows({ defaults = [] }: { defaults?: { name: string; score: number | null }[] }) {
   const [rows, setRows] = useState(() => (defaults.length ? defaults : [{ name: "", score: null }]).map((d, i) => ({ ...d, key: i })));
   const [nextKey, setNextKey] = useState(rows.length);
+  const t = useT();
 
   return (
     <div className="space-y-2">
@@ -17,14 +19,14 @@ export function ActivityRows({ defaults = [] }: { defaults?: { name: string; sco
           <input
             name="activity_name"
             defaultValue={r.name}
-            placeholder="e.g. Climbing stairs"
-            aria-label="Activity"
+            placeholder={t("e.g. Climbing stairs")}
+            aria-label={t("Activity")}
             className="min-h-11 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3 text-base outline-none focus:border-brand"
           />
           <select
             name="activity_score"
             defaultValue={r.score ?? ""}
-            aria-label="Score out of 10"
+            aria-label={t("Score out of 10")}
             className="min-h-11 w-20 shrink-0 rounded-xl border border-border bg-surface px-2 text-base outline-none focus:border-brand"
           >
             <option value="">–</option>
@@ -35,7 +37,7 @@ export function ActivityRows({ defaults = [] }: { defaults?: { name: string; sco
             ))}
           </select>
           {rows.length > 1 && (
-            <button type="button" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))} className="text-sm text-muted" aria-label="Remove activity">
+            <button type="button" onClick={() => setRows((rs) => rs.filter((x) => x.key !== r.key))} className="text-sm text-muted" aria-label={t("Remove activity")}>
               ✕
             </button>
           )}
@@ -49,7 +51,7 @@ export function ActivityRows({ defaults = [] }: { defaults?: { name: string; sco
         }}
         className="text-sm font-medium text-brand"
       >
-        + Add activity
+        {t("+ Add activity")}
       </button>
     </div>
   );

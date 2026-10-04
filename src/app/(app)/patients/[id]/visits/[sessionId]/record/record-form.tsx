@@ -5,6 +5,7 @@ import type { FormState } from "@/app/(app)/actions";
 import { ScoreRow } from "@/components/assessment-inputs";
 import { SubmitButton } from "@/components/submit-button";
 import { useFormAction } from "@/lib/use-form-action";
+import { useT } from "@/i18n/client";
 
 type Kind = "exercise" | "treatment";
 export type RecordItem = { kind: Kind; name: string; dosage: string | null };
@@ -37,6 +38,7 @@ export function RecordForm({
 }) {
   const [state, onSubmit, pending] = useFormAction(action, undefined);
   const [rows, setRows] = useState<Row[]>(() => toRows(initial));
+  const t = useT();
 
   const add = (item: RecordItem) => setRows((rs) => [...rs, ...toRows([item])]);
   const update = (key: number, patch: Partial<RecordItem>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
@@ -50,7 +52,7 @@ export function RecordForm({
         <h2 className="text-lg font-semibold">{title}</h2>
         {quick.length > 0 && (
           <div>
-            <p className="mb-1.5 text-sm text-muted">Tap to add</p>
+            <p className="mb-1.5 text-sm text-muted">{t("Tap to add")}</p>
             <div className="flex flex-wrap gap-2">
               {quick.map((l) => (
                 <button
@@ -72,17 +74,17 @@ export function RecordForm({
               onChange={(e) => update(r.key, { name: e.target.value })}
               list={`${kind}-names`}
               placeholder={placeholder}
-              aria-label={`${title} name`}
+              aria-label={t("{what} name", { what: title })}
               className="min-h-11 min-w-0 flex-[2] rounded-xl border border-border bg-surface px-3 text-base outline-none focus:border-brand"
             />
             <input
               value={r.dosage ?? ""}
               onChange={(e) => update(r.key, { dosage: e.target.value })}
               placeholder={dosageHint}
-              aria-label="Dosage"
+              aria-label={t("Dosage")}
               className="min-h-11 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3 text-base outline-none focus:border-brand"
             />
-            <button type="button" onClick={() => remove(r.key)} className="px-1 text-muted" aria-label={`Remove ${r.name || kind}`}>
+            <button type="button" onClick={() => remove(r.key)} className="px-1 text-muted" aria-label={t("Remove {name}", { name: r.name || title })}>
               ✕
             </button>
           </div>
@@ -95,7 +97,7 @@ export function RecordForm({
             ))}
         </datalist>
         <button type="button" onClick={() => add({ kind, name: "", dosage: "" })} className="text-sm font-medium text-brand">
-          + {kind === "exercise" ? "Add an exercise" : "Add a treatment"}
+          + {kind === "exercise" ? t("Add an exercise") : t("Add a treatment")}
         </button>
       </section>
     );
@@ -115,23 +117,23 @@ export function RecordForm({
 
       {lastTime.length > 0 && (
         <button type="button" onClick={() => setRows(toRows(lastTime))} className="btn w-full text-base">
-          ↻ Same as last time ({lastTime.length} item{lastTime.length === 1 ? "" : "s"})
+          ↻ {lastTime.length === 1 ? t("Same as last time (1 item)") : t("Same as last time ({n} items)", { n: lastTime.length })}
         </button>
       )}
 
-      {section("exercise", "Exercises", "e.g. Straight leg raise", "3 × 10")}
-      {section("treatment", "Treatments", "e.g. IFT, ultrasound, hot pack", "10 min")}
+      {section("exercise", t("Exercises"), t("e.g. Straight leg raise"), "3 × 10")}
+      {section("treatment", t("Treatments"), t("e.g. IFT, ultrasound, hot pack"), t("10 min"))}
 
       <section className="card space-y-3">
         <label className="field">
-          <span>Notes</span>
-          <textarea name="notes" rows={3} defaultValue={notes} placeholder="How it went, response, what to do next time" />
+          <span>{t("Notes")}</span>
+          <textarea name="notes" rows={3} defaultValue={notes} placeholder={t("How it went, response, what to do next time")} />
         </label>
         {cases.length > 1 ? (
           <label className="field">
-            <span>Part of case</span>
+            <span>{t("Part of case")}</span>
             <select name="case_id" defaultValue={caseId ?? ""}>
-              <option value="">No case</option>
+              <option value="">{t("No case")}</option>
               {cases.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.title}
@@ -145,23 +147,23 @@ export function RecordForm({
       </section>
 
       <details className="card">
-        <summary className="cursor-pointer text-base font-medium">Pain check (optional)</summary>
+        <summary className="cursor-pointer text-base font-medium">{t("Pain check (optional)")}</summary>
         <div className="mt-3 space-y-4">
-          <ScoreRow name="before_session" label="Before the session" />
-          <ScoreRow name="after_session" label="After the session" />
-          <ScoreRow name="at_rest" label="At rest" />
-          <ScoreRow name="on_activity" label="On activity" />
-          <p className="text-sm text-muted">Saved as a new entry in the pain history each time.</p>
+          <ScoreRow name="before_session" label={t("Before the session")} />
+          <ScoreRow name="after_session" label={t("After the session")} />
+          <ScoreRow name="at_rest" label={t("At rest")} />
+          <ScoreRow name="on_activity" label={t("On activity")} />
+          <p className="text-sm text-muted">{t("Saved as a new entry in the pain history each time.")}</p>
         </div>
       </details>
 
       {state?.error && (
         <p role="alert" className="rounded-2xl bg-bad-soft p-3 text-base text-bad">
-          {state.error}
+          {t(state.error)}
         </p>
       )}
-      <SubmitButton className="btn btn-primary min-h-12 w-full text-base" pendingText="Saving…" pending={pending}>
-        Save session record
+      <SubmitButton className="btn btn-primary min-h-12 w-full text-base" pendingText={t("Saving…")} pending={pending}>
+        {t("Save session record")}
       </SubmitButton>
     </form>
   );

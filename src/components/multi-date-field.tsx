@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { parseDateInput, toDisplay } from "@/lib/date-input";
 import { isoWeekday, WEEKDAYS } from "@/lib/schedule";
+import { useT } from "@/i18n/client";
 import { DateField } from "./date-field";
 
 type Mark = "attended" | "missed";
@@ -10,8 +11,6 @@ type Mark = "attended" | "missed";
 function shift(date: string, days: number) {
   return new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 }
-
-const WEEK_HEADER = ["M", "T", "W", "T", "F", "S", "S"];
 
 /**
  * Calendar for entering many past visits at once. Tap a day once = attended,
@@ -39,6 +38,10 @@ export function MultiDateField({
   const [typed, setTyped] = useState("");
   const [typedError, setTypedError] = useState("");
   const wrapRef = useRef<HTMLDivElement>(null);
+  const t = useT();
+  const weekHeader = WEEKDAYS.map((w) =>
+    new Intl.DateTimeFormat(t.intl, { weekday: "narrow", timeZone: "UTC" }).format(new Date(Date.UTC(2024, 0, w.n))),
+  );
 
   // Clear after a successful save (the form resets).
   useEffect(() => {
@@ -60,9 +63,9 @@ export function MultiDateField({
 
   function addTyped() {
     const d = parseDateInput(typed, today);
-    if (!d) return setTypedError("Use DD/MM/YYYY");
-    if (d > today) return setTypedError("Can't be in the future");
-    if (existing[d]) return setTypedError(`${toDisplay(d)} is already recorded`);
+    if (!d) return setTypedError(t("Use DD/MM/YYYY"));
+    if (d > today) return setTypedError(t("Can't be in the future"));
+    if (existing[d]) return setTypedError(t("{date} is already recorded", { date: toDisplay(d) }));
     setMarks((m) => ({ ...m, [d]: m[d] ?? "attended" }));
     setMonth(d.slice(0, 7));
     setTyped("");
@@ -71,18 +74,22 @@ export function MultiDateField({
 
   /** Tick every chosen weekday between the two dates (skipping future and already-recorded days). */
   function fillRange() {
-    if (!rangeFrom || !rangeTo) return setRangeNote("Pick both dates first.");
-    if (rangeFrom > rangeTo) return setRangeNote("The “from” date must be before the “to” date.");
-    if (rangeDays.length === 0) return setRangeNote("Pick at least one weekday.");
+    if (!rangeFrom || !rangeTo) return setRangeNote(t("Pick both dates first."));
+    if (rangeFrom > rangeTo) return setRangeNote(t("The “from” date must be before the “to” date."));
+    if (rangeDays.length === 0) return setRangeNote(t("Pick at least one weekday."));
     const picked: string[] = [];
     for (let d = rangeFrom; d <= rangeTo && d <= today; d = shift(d, 1)) {
       if (rangeDays.includes(isoWeekday(d)) && !existing[d]) picked.push(d);
       if (picked.length > 400) break;
     }
-    if (picked.length === 0) return setRangeNote("No new days in that range (they may already be recorded).");
+    if (picked.length === 0) return setRangeNote(t("No new days in that range (they may already be recorded)."));
     setMarks((m) => ({ ...m, ...Object.fromEntries(picked.map((d) => [d, rangeMark])) }));
     setMonth(picked.at(-1)!.slice(0, 7));
-    setRangeNote(`Ticked ${picked.length} day${picked.length === 1 ? "" : "s"} — check the calendar below and tap any day to change it.`);
+    setRangeNote(
+      picked.length === 1
+        ? t("Ticked 1 day — check the calendar below and tap any day to change it.")
+        : t("Ticked {n} days — check the calendar below and tap any day to change it.", { n: picked.length }),
+    );
   }
 
   const first = `${month}-01`;
@@ -93,7 +100,7 @@ export function MultiDateField({
     const d = new Date(Date.UTC(+month.slice(0, 4), +month.slice(5, 7) - 1 + delta, 1));
     setMonth(d.toISOString().slice(0, 7));
   };
-  const monthLabel = new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${first}T00:00:00Z`));
+  const monthLabel = new Intl.DateTimeFormat(t.intl, { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${first}T00:00:00Z`));
 
   const picked = Object.entries(marks).sort(([a], [b]) => a.localeCompare(b));
   const attended = picked.filter(([, m]) => m === "attended").map(([d]) => d);
@@ -108,22 +115,19 @@ export function MultiDateField({
         <input key={`m${d}`} type="hidden" name="missed_dates" value={d} />
       ))}
 
-      <p className="text-xs text-muted">
-        Tap a day: once = <span className="font-medium text-ok">✓ attended</span>, twice = <span className="font-medium text-bad">✗ missed</span>,
-        three times = clear.
-      </p>
+      <p className="text-xs text-muted">{t("Tap a day: once = ✓ attended, twice = ✗ missed, three times = clear.")}</p>
 
       {/* Side by side on wider screens so the whole thing fits on a laptop. */}
       <div className="grid gap-4 md:grid-cols-2 md:items-start">
         <details className="rounded-2xl bg-surface-2 p-3" open>
-          <summary className="cursor-pointer text-base font-medium">Fill a date range</summary>
+          <summary className="cursor-pointer text-base font-medium">{t("Fill a date range")}</summary>
           <div className="mt-3 space-y-3">
             <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-1">
-              <DateField name="range_from" label="From" today={today} max={today} shortcuts={[]} onChange={setRangeFrom} />
-              <DateField name="range_to" label="To" today={today} defaultValue={today} max={today} shortcuts={["today"]} onChange={setRangeTo} />
+              <DateField name="range_from" label={t("From")} today={today} max={today} shortcuts={[]} onChange={setRangeFrom} />
+              <DateField name="range_to" label={t("To")} today={today} defaultValue={today} max={today} shortcuts={["today"]} onChange={setRangeTo} />
             </div>
             <fieldset>
-              <legend className="mb-1.5 text-sm font-medium">On these days</legend>
+              <legend className="mb-1.5 text-sm font-medium">{t("On these days")}</legend>
               <div className="grid grid-cols-7 gap-1">
                 {WEEKDAYS.map((w) => {
                   const on = rangeDays.includes(w.n);
@@ -135,14 +139,14 @@ export function MultiDateField({
                       onClick={() => setRangeDays((d) => (on ? d.filter((x) => x !== w.n) : [...d, w.n]))}
                       className={`min-h-10 rounded-xl border text-sm font-medium ${on ? "border-brand bg-brand text-brand-fg" : "border-border bg-surface text-muted"}`}
                     >
-                      {w.short.slice(0, 2)}
+                      {t.locale === "en" ? w.short.slice(0, 2) : t.weekday(w.n)}
                     </button>
                   );
                 })}
               </div>
             </fieldset>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium">Mark them</span>
+              <span className="text-sm font-medium">{t("Mark them")}</span>
               {(["attended", "missed"] as const).map((m) => (
                 <button
                   key={m}
@@ -153,12 +157,12 @@ export function MultiDateField({
                     rangeMark === m ? (m === "attended" ? "border-ok bg-ok-soft text-ok" : "border-bad bg-bad-soft text-bad") : "border-border text-muted"
                   }`}
                 >
-                  {m === "attended" ? "✓ Present" : "✗ Absent"}
+                  {m === "attended" ? `✓ ${t("Present")}` : `✗ ${t("Absent")}`}
                 </button>
               ))}
             </div>
             <button type="button" onClick={fillRange} className="btn w-full text-base">
-              Tick these days on the calendar
+              {t("Tick these days on the calendar")}
             </button>
             {rangeNote && <p className="text-sm text-muted">{rangeNote}</p>}
           </div>
@@ -167,7 +171,7 @@ export function MultiDateField({
         <div className="space-y-3">
           <div className="mx-auto w-full max-w-sm rounded-2xl border border-border p-3">
             <div className="mb-2 flex items-center justify-between">
-              <button type="button" onClick={() => moveMonth(-1)} className="btn min-h-9 px-3" aria-label="Previous month">
+              <button type="button" onClick={() => moveMonth(-1)} className="btn min-h-9 px-3" aria-label={t("Previous month")}>
                 ‹
               </button>
               <span className="text-sm font-medium">{monthLabel}</span>
@@ -176,13 +180,13 @@ export function MultiDateField({
                 onClick={() => moveMonth(1)}
                 disabled={month >= today.slice(0, 7)}
                 className="btn min-h-9 px-3"
-                aria-label="Next month"
+                aria-label={t("Next month")}
               >
                 ›
               </button>
             </div>
             <div className="grid grid-cols-7 gap-1 text-center text-xs">
-              {WEEK_HEADER.map((d, i) => (
+              {weekHeader.map((d, i) => (
                 <span key={i} className="py-1 text-muted">
                   {d}
                 </span>
@@ -198,7 +202,7 @@ export function MultiDateField({
                     type="button"
                     disabled={future || Boolean(already)}
                     onClick={() => cycle(d)}
-                    aria-label={`${toDisplay(d)}${mark ? ` – ${mark}` : already ? " – already recorded" : ""}`}
+                    aria-label={`${toDisplay(d)}${mark === "attended" ? ` – ${t("attended")}` : mark === "missed" ? ` – ${t("missed")}` : already ? ` – ${t("already recorded")}` : ""}`}
                     className={`relative h-10 rounded-lg text-sm font-medium disabled:cursor-not-allowed ${
                       mark === "attended"
                         ? "bg-ok text-bg"
@@ -234,13 +238,13 @@ export function MultiDateField({
                   addTyped();
                 }
               }}
-              placeholder="Or type a date: DD/MM/YYYY"
+              placeholder={t("Or type a date: DD/MM/YYYY")}
               inputMode="numeric"
-              aria-label="Type a date to add"
+              aria-label={t("Type a date to add")}
               className="min-h-11 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3 text-base outline-none focus:border-brand"
             />
             <button type="button" onClick={addTyped} className="btn shrink-0">
-              Add
+              {t("Add")}
             </button>
           </div>
           {typedError && <p className="text-xs text-bad">{typedError}</p>}
@@ -248,10 +252,10 @@ export function MultiDateField({
           {picked.length > 0 && (
             <div className="space-y-1.5">
               <p className="text-sm">
-                <span className="font-medium text-ok">{attended.length} attended</span>
-                {missed.length > 0 && <span className="font-medium text-bad"> · {missed.length} missed</span>}
+                <span className="font-medium text-ok">{t("{n} attended", { n: attended.length })}</span>
+                {missed.length > 0 && <span className="font-medium text-bad"> · {t("{n} missed", { n: missed.length })}</span>}
                 <button type="button" onClick={() => setMarks({})} className="ml-2 text-xs text-muted underline">
-                  clear all
+                  {t("clear all")}
                 </button>
               </p>
               <div className="flex max-h-28 flex-wrap gap-1 overflow-y-auto">
@@ -261,7 +265,7 @@ export function MultiDateField({
                     type="button"
                     onClick={() => cycle(d)}
                     className={`chip ${m === "attended" ? "bg-ok-soft text-ok" : "bg-bad-soft text-bad"}`}
-                    title="Tap to change"
+                    title={t("Tap to change")}
                   >
                     {m === "attended" ? "✓" : "✗"} {toDisplay(d)}
                   </button>

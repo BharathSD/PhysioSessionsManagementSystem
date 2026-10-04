@@ -1,8 +1,12 @@
+"use client";
+
+import { useT } from "@/i18n/client";
 import { DESIGNATIONS } from "@/lib/names";
 import { TitlePicker } from "./title-picker";
 
 /** Dr. · Prof. · Mr. · Ms. · Mrs. · None, as tap-chips. Submits `designation`. */
 export function DesignationPicker({ defaultValue = "Dr." }: { defaultValue?: string }) {
+  const t = useT();
   return (
     <TitlePicker
       name="designation"
@@ -10,7 +14,7 @@ export function DesignationPicker({ defaultValue = "Dr." }: { defaultValue?: str
       defaultValue={defaultValue}
       legend={
         <>
-          Title <em className="font-normal text-muted">(shown before your name)</em>
+          {t("Title")} <em className="font-normal text-muted">{t("(shown before your name)")}</em>
         </>
       }
     />

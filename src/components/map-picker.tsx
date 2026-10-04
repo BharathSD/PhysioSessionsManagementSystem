@@ -3,6 +3,7 @@
 import "leaflet/dist/leaflet.css";
 import { useEffect, useRef, useState } from "react";
 import type { Map as LeafletMap } from "leaflet";
+import { useT } from "@/i18n/client";
 
 // OpenStreetMap: free, no API key. Their usage policy asks for light use —
 // lookups here only happen when the physio taps a button, never while typing.
@@ -33,6 +34,7 @@ export function MapPicker({
   const [results, setResults] = useState<Result[] | null>(null);
   const [busy, setBusy] = useState<"" | "search" | "locate" | "pick">("");
   const [problem, setProblem] = useState("");
+  const t = useT();
 
   useEffect(() => {
     let cancelled = false;
@@ -65,7 +67,7 @@ export function MapPicker({
       setResults(found);
       if (found.length === 1) goTo(found[0]);
     } catch {
-      setProblem("Couldn't search right now. Move the map by hand instead.");
+      setProblem(t("Couldn't search right now. Move the map by hand instead."));
     } finally {
       setBusy("");
     }
@@ -77,7 +79,7 @@ export function MapPicker({
   }
 
   function locate() {
-    if (!navigator.geolocation) return setProblem("This device can't share its location.");
+    if (!navigator.geolocation) return setProblem(t("This device can't share its location."));
     setBusy("locate");
     setProblem("");
     navigator.geolocation.getCurrentPosition(
@@ -86,7 +88,7 @@ export function MapPicker({
         setBusy("");
       },
       () => {
-        setProblem("Location is off or not allowed. Search for the area instead.");
+        setProblem(t("Location is off or not allowed. Search for the area instead."));
         setBusy("");
       },
       { enableHighAccuracy: true, timeout: 15_000 },
@@ -123,17 +125,17 @@ export function MapPicker({
               search();
             }
           }}
-          placeholder="Search area, building or landmark"
-          aria-label="Search the map"
+          placeholder={t("Search area, building or landmark")}
+          aria-label={t("Search the map")}
           className="min-w-0 flex-1 rounded-xl border border-border bg-surface px-3 py-2 text-base"
         />
         <button type="button" onClick={search} className="btn shrink-0" disabled={busy === "search"}>
-          {busy === "search" ? "…" : "Search"}
+          {busy === "search" ? "…" : t("Search")}
         </button>
       </div>
       {results && (
         <ul className="overflow-hidden rounded-xl border border-border bg-surface text-sm">
-          {results.length === 0 && <li className="px-3 py-2 text-muted">Nothing found. Try the area or a landmark nearby.</li>}
+          {results.length === 0 && <li className="px-3 py-2 text-muted">{t("Nothing found. Try the area or a landmark nearby.")}</li>}
           {results.map((r) => (
             <li key={`${r.lat},${r.lon}`} className="border-t border-border first:border-t-0">
               <button type="button" onClick={() => goTo(r)} className="w-full px-3 py-2 text-left">
@@ -151,18 +153,18 @@ export function MapPicker({
           <circle cx="12" cy="12" r="4.5" fill="white" />
         </svg>
       </div>
-      <p className="text-sm text-muted">Move the map so the pin sits on the patient&apos;s home. Pinch or use + / − to zoom.</p>
+      <p className="text-sm text-muted">{t("Move the map so the pin sits on the patient's home. Pinch or use + / − to zoom.")}</p>
       {problem && <p className="text-sm text-bad">{problem}</p>}
       <div className="grid grid-cols-2 gap-2">
         <button type="button" onClick={locate} className="btn" disabled={busy === "locate"}>
-          {busy === "locate" ? "Finding you…" : "📍 I'm there now"}
+          {busy === "locate" ? t("Finding you…") : `📍 ${t("I'm there now")}`}
         </button>
         <button type="button" onClick={pick} className="btn btn-primary" disabled={busy === "pick"}>
-          {busy === "pick" ? "Saving…" : "Use this spot"}
+          {busy === "pick" ? t("Saving…") : t("Use this spot")}
         </button>
       </div>
       <button type="button" onClick={onClose} className="w-full py-1 text-sm text-muted">
-        Cancel
+        {t("Cancel")}
       </button>
     </div>
   );

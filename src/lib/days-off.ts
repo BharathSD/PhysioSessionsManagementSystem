@@ -1,5 +1,7 @@
 // Days off cancelled in advance: the whole clinic (patient_id null) or one patient.
 
+import { EN, type T } from "@/i18n";
+
 export type DayOff = {
   id: string;
   patient_id: string | null;
@@ -21,8 +23,8 @@ export function isOffFor(daysOff: DayOff[], patientId: string | null): (date: st
 }
 
 /** "Clinic closed · Diwali" / "Cancelled by patient · travelling" */
-export function describeOff(d: DayOff): string {
-  const who = d.patient_id === null ? "Clinic closed" : d.cancelled_by === "patient" ? "Cancelled by patient" : "Cancelled by clinic";
+export function describeOff(d: DayOff, t: T = EN): string {
+  const who = d.patient_id === null ? t("Clinic closed") : d.cancelled_by === "patient" ? t("Cancelled by patient") : t("Cancelled by clinic");
   return d.reason ? `${who} · ${d.reason}` : who;
 }
 

@@ -21,7 +21,8 @@ export const getContext = cache(async () => {
     .order("created_at")
     .limit(1)
     .single();
-  if (!member) throw new Error("No clinic found for this account. Did the database migration run?");
+  // Left or was removed from their clinic: offer to start their own practice.
+  if (!member) redirect("/welcome");
 
   const { clinics, ...rest } = member as unknown as Member & { clinics: Clinic };
   return { supabase, userId, email, member: rest as Member, clinic: clinics };

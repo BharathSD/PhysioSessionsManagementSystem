@@ -1,4 +1,6 @@
-import { formatDate } from "@/lib/format";
+"use client";
+
+import { useT } from "@/i18n/client";
 
 type Point = { date: string; score: number };
 
@@ -34,7 +36,7 @@ export function TrendChart({
   min,
   max,
   unit = "",
-  what = "value",
+  what,
   emptyText,
 }: {
   points: Point[];
@@ -44,6 +46,8 @@ export function TrendChart({
   what?: string;
   emptyText: string;
 }) {
+  const t = useT();
+  what ??= t("value");
   if (points.length === 0) return <p className="text-base text-muted">{emptyText}</p>;
 
   const [autoLo, autoHi] = niceScale(points.map((p) => p.score));
@@ -67,13 +71,19 @@ export function TrendChart({
         <span className="text-muted">
           {" "}
           {points.length === 1
-            ? `on ${formatDate(first.date)}`
+            ? t("on {date}", { date: t.date(first.date) })
             : change === 0
-              ? `no change since ${formatDate(first.date)}`
-              : `${change < 0 ? "↓" : "↑"} ${trim(Math.abs(change))}${unit || (Math.abs(change) === 1 ? " point" : " points")} since ${formatDate(first.date)}`}
+              ? t("no change since {date}", { date: t.date(first.date) })
+              : `${change < 0 ? "↓" : "↑"} ${
+                  unit
+                    ? t("{n} since {date}", { n: `${trim(Math.abs(change))}${unit}`, date: t.date(first.date) })
+                    : Math.abs(change) === 1
+                      ? t("1 point since {date}", { date: t.date(first.date) })
+                      : t("{n} points since {date}", { n: trim(Math.abs(change)), date: t.date(first.date) })
+                }`}
         </span>
       </p>
-      <svg viewBox={`0 0 ${W} ${H}`} className="mx-auto h-auto w-full max-w-md" role="img" aria-label={`${what} from ${fmt(first.score)} to ${fmt(last.score)} over ${points.length} records`}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="mx-auto h-auto w-full max-w-md" role="img" aria-label={t("{what} from {from} to {to} over {n} records", { what, from: fmt(first.score), to: fmt(last.score), n: points.length })}>
         {guides.map((g) => (
           <g key={g}>
             <line x1={PAD.left} x2={W - PAD.right} y1={y(g)} y2={y(g)} stroke="var(--border)" strokeWidth={1} />
@@ -85,7 +95,7 @@ export function TrendChart({
         {points.length > 1 && <path d={path} fill="none" stroke="var(--chart)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />}
         {points.map((pt, i) => (
           <g key={`${pt.date}-${i}`}>
-            <title>{`${formatDate(pt.date)}: ${what} ${fmt(pt.score)}`}</title>
+            <title>{`${t.date(pt.date)}: ${what} ${fmt(pt.score)}`}</title>
             {/* larger invisible hit area for the tooltip */}
             <circle cx={x(i)} cy={y(pt.score)} r={11} fill="transparent" />
             <circle cx={x(i)} cy={y(pt.score)} r={4} fill="var(--chart)" stroke="var(--surface)" strokeWidth={2} />
@@ -107,11 +117,11 @@ export function TrendChart({
             </text>
           ))}
         <text x={PAD.left} y={H - 4} fontSize={10} fill="var(--muted)">
-          {formatDate(first.date).replace(/ \d{4}$/, "")}
+          {t.date(first.date).replace(/ \d{4}$/, "")}
         </text>
         {points.length > 1 && (
           <text x={W - PAD.right} y={H - 4} textAnchor="end" fontSize={10} fill="var(--muted)">
-            {formatDate(last.date).replace(/ \d{4}$/, "")}
+            {t.date(last.date).replace(/ \d{4}$/, "")}
           </text>
         )}
       </svg>
@@ -121,13 +131,14 @@ export function TrendChart({
 
 /** Pain score (0–10) across visits. */
 export function PainChart({ points, emptyText }: { points: Point[]; emptyText?: string }) {
+  const t = useT();
   return (
     <TrendChart
       points={points}
       min={0}
       max={10}
-      what="pain"
-      emptyText={emptyText ?? "No pain scores yet. Tap a score after marking Present to start tracking progress."}
+      what={t("pain")}
+      emptyText={emptyText ?? t("No pain scores yet. Tap a score after marking Present to start tracking progress.")}
     />
   );
 }

@@ -4,7 +4,7 @@ import { Icon, type IconName } from "@/components/icons";
 import { PainChart } from "@/components/pain-chart";
 import { SectionTitle } from "@/components/ui";
 import { VisitCalendar } from "@/components/visit-calendar";
-import { formatDate, formatDay, formatMoney } from "@/lib/format";
+import type { T } from "@/i18n";
 import {
   absentStreak,
   actualPerWeek,
@@ -72,9 +72,12 @@ export function Overview(props: {
   daysOff: DayOff[];
   activeCases: { id: string; title: string; opened_on: string }[];
   base: string;
+  t: T;
 }) {
-  const { p, details, visits, today, typeName, base } = props;
-  const money = (n: number) => formatMoney(n, props.currency);
+  const { p, details, visits, today, typeName, base, t } = props;
+  const money = (n: number) => t.money(n, props.currency);
+  const formatDate = (d: string) => t.date(d);
+  const formatDay = (d: string) => t.day(d);
 
   // Attendance & adherence
   const att = attendance(visits, today);
@@ -121,25 +124,31 @@ export function Overview(props: {
   const lastVisit = p.last_visit;
   const quietDays = lastVisit ? Math.round((Date.parse(today) - Date.parse(lastVisit)) / 86_400_000) : 0;
   const alerts: { text: string; tone: "bad" | "warn" }[] = [];
-  if (streak >= 2) alerts.push({ text: `Absent for the last ${streak} sessions — worth a call`, tone: "bad" });
-  if (!p.archived && lastVisit && quietDays >= 14) alerts.push({ text: `No visit in ${quietDays} days (last on ${formatDate(lastVisit)})`, tone: "warn" });
-  if (since && dueDays >= 30) alerts.push({ text: `${money(p.amount_due)} has been due for ${dueDays} days`, tone: "bad" });
+  if (streak >= 2) alerts.push({ text: t("Absent for the last {n} sessions — worth a call", { n: streak }), tone: "bad" });
+  if (!p.archived && lastVisit && quietDays >= 14) {
+    alerts.push({ text: t("No visit in {n} days (last on {date})", { n: quietDays, date: formatDate(lastVisit) }), tone: "warn" });
+  }
+  if (since && dueDays >= 30) alerts.push({ text: t("{amount} has been due for {n} days", { amount: money(p.amount_due), n: dueDays }), tone: "bad" });
 
   // Recent activity
   const activity = recentActivity(
     { visits, payments: props.payments, bookings: props.allBookings, plans: props.plans, rates: props.patientRates, charges: props.charges },
     {
       visit: (v) => ({
-        title: `${STATUS[v.status].label} · ${typeName(v.visit_type_id)}`,
-        detail: [v.package_id ? "from package" : Number(v.charge) > 0 ? money(Number(v.charge)) : null, v.notes ? `“${v.notes}”` : null]
+        title: `${t(STATUS[v.status].label)} · ${typeName(v.visit_type_id)}`,
+        detail: [v.package_id ? t("from package") : Number(v.charge) > 0 ? money(Number(v.charge)) : null, v.notes ? `“${v.notes}”` : null]
           .filter(Boolean)
           .join(" · "),
       }),
-      payment: (x) => `Paid ${money(Number(x.amount))} · ${x.method.toUpperCase()}`,
-      plan: (pl) => describePlan(pl),
-      fee: (r) => `${typeName(r.visit_type_id)} fee ${r.amount === null ? "back to default" : `set to ${money(Number(r.amount))}`}`,
+      payment: (x) => t("Paid {amount} · {method}", { amount: money(Number(x.amount)), method: x.method.toUpperCase() }),
+      plan: (pl) => describePlan(pl, t),
+      fee: (r) =>
+        r.amount === null
+          ? t("{type} fee back to default", { type: typeName(r.visit_type_id) })
+          : t("{type} fee set to {amount}", { type: typeName(r.visit_type_id), amount: money(Number(r.amount)) }),
       money,
       date: formatDay,
+      t,
     },
     6,
   );
@@ -165,7 +174,7 @@ export function Overview(props: {
       )}
 
       {/* Calendar of visits */}
-      <SectionTitle>Calendar</SectionTitle>
+      <SectionTitle>{t("Calendar")}</SectionTitle>
       <div className="card">
         <VisitCalendar
           patientId={p.id}
@@ -180,37 +189,43 @@ export function Overview(props: {
       </div>
 
       {/* Pain */}
-      <SectionTitle aside={painPoints.length > 1 ? `Last ${painPoints.length} scored visits` : undefined}>Pain</SectionTitle>
+      <SectionTitle aside={painPoints.length > 1 ? t("Last {n} scored visits", { n: painPoints.length }) : undefined}>{t("Pain")}</SectionTitle>
       <div className="card">
         <PainChart points={painPoints} />
       </div>
 
       {/* Attendance */}
-      <SectionTitle aside="Last 30 days">Attendance</SectionTitle>
+      <SectionTitle aside={t("Last 30 days")}>{t("Attendance")}</SectionTitle>
       <div className="card space-y-4">
         <div className="grid grid-cols-3 gap-3 text-center">
           <div>
             <p className={`text-3xl font-semibold ${att.rate !== null && att.rate < 70 ? "text-warn" : ""}`}>{att.rate === null ? "—" : `${att.rate}%`}</p>
-            <p className="text-sm text-muted">turned up</p>
+            <p className="text-sm text-muted">{t("turned up")}</p>
           </div>
           <div>
             <p className="text-3xl font-semibold">{actual === null ? "—" : actual.toFixed(1)}</p>
-            <p className="text-sm text-muted">per week</p>
+            <p className="text-sm text-muted">{t("per week")}</p>
           </div>
           <div>
             <p className="text-3xl font-semibold">{planned === null ? "—" : Number.isInteger(planned) ? planned : planned.toFixed(1)}</p>
-            <p className="text-sm text-muted">planned / week</p>
+            <p className="text-sm text-muted">{t("planned / week")}</p>
           </div>
         </div>
         <p className="text-center text-sm text-muted">
-          {att.present} present · {att.absent} absent · {att.cancelled} cancelled by patient
+          {t("{present} present · {absent} absent · {cancelled} cancelled by patient", {
+            present: att.present,
+            absent: att.absent,
+            cancelled: att.cancelled,
+          })}
         </p>
         <div>
-          <div className="flex h-20 items-end gap-1.5" aria-label="Visits per week, last 8 weeks">
+          <div className="flex h-20 items-end gap-1.5" aria-label={t("Visits per week, last 8 weeks")}>
             {weeks.map((w) => (
               <div
                 key={w.start}
-                title={`Week of ${formatDay(w.start)}: ${w.count} visit${w.count === 1 ? "" : "s"}${planned !== null ? ` (plan ${Number.isInteger(planned) ? planned : planned.toFixed(1)})` : ""}`}
+                title={`${t("Week of {day}: {n} visits", { day: formatDay(w.start), n: w.count })}${
+                  planned !== null ? ` (${t("plan {n}", { n: Number.isInteger(planned) ? planned : planned.toFixed(1) })})` : ""
+                }`}
                 className="flex h-full flex-1 flex-col items-center justify-end gap-1"
               >
                 <span className="text-xs text-muted">{w.count || ""}</span>
@@ -223,29 +238,33 @@ export function Overview(props: {
           </div>
           <div className="mt-1 flex justify-between text-[11px] text-muted">
             <span>{formatDay(weeks[0].start)}</span>
-            <span>visits per week</span>
-            <span>this week</span>
+            <span>{t("visits per week")}</span>
+            <span>{t("this week")}</span>
           </div>
         </div>
       </div>
 
       {/* Coming up */}
-      <SectionTitle>Coming up</SectionTitle>
+      <SectionTitle>{t("Coming up")}</SectionTitle>
       <div className="card space-y-3">
         {next7.length === 0 ? (
-          <p className="text-base text-muted">{flexiblePlan ? `${describePlan(flexiblePlan)} — book days as they choose them.` : "Nothing scheduled in the next 7 days."}</p>
+          <p className="text-base text-muted">
+            {flexiblePlan
+              ? t("{plan} — book days as they choose them.", { plan: describePlan(flexiblePlan, t) })
+              : t("Nothing scheduled in the next 7 days.")}
+          </p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {next7.map((u) =>
               u.off ? (
                 // Cancelled in advance: struck through, with Restore for the patient's own single days off.
                 <span key={u.date} className="rounded-xl border border-dashed border-border px-3 py-2 text-sm text-muted">
-                  <span className="block font-semibold line-through">{u.date === today ? "Today" : formatDay(u.date)}</span>
-                  <span className="block">{describeOff(u.off)}</span>
+                  <span className="block font-semibold line-through">{u.date === today ? t("Today") : formatDay(u.date)}</span>
+                  <span className="block">{describeOff(u.off, t)}</span>
                   {u.off.patient_id && u.off.from_date === u.off.to_date && (
                     <form action={restorePatientDay.bind(null, u.off.id, p.id)}>
                       <button type="submit" className="mt-0.5 text-xs font-medium text-brand underline">
-                        Restore
+                        {t("Restore")}
                       </button>
                     </form>
                   )}
@@ -253,16 +272,16 @@ export function Overview(props: {
               ) : (
                 <span key={u.date} className="flex items-start gap-2 rounded-xl bg-surface-2 py-2 pr-1 pl-3 text-sm">
                   <span>
-                    <span className="block font-semibold">{u.date === today ? "Today" : formatDay(u.date)}</span>
+                    <span className="block font-semibold">{u.date === today ? t("Today") : formatDay(u.date)}</span>
                     <span className="block text-muted">
                       {typeName(u.visitTypeId)}
-                      {u.booked ? " · booked" : ""}
+                      {u.booked ? ` · ${t("booked")}` : ""}
                     </span>
                   </span>
                   <Link
                     href={`${base}/cancel-days?dates=${u.date}`}
-                    aria-label={`Cancel ${formatDay(u.date)}`}
-                    title="Cancel this day"
+                    aria-label={t("Cancel {day}", { day: formatDay(u.date) })}
+                    title={t("Cancel this day")}
                     className="flex size-8 items-center justify-center rounded-lg text-muted hover:bg-surface hover:text-bad"
                   >
                     <Icon name="x" className="size-4" />
@@ -273,19 +292,25 @@ export function Overview(props: {
           </div>
         )}
         <Link href={`${base}/cancel-days`} className="inline-flex min-h-10 items-center gap-1 text-sm font-medium text-brand">
-          <Icon name="ban" className="size-4" /> Away for a while? Take a break
+          <Icon name="ban" className="size-4" /> {t("Away for a while? Take a break")}
         </Link>
         {p.sessions_bought > 0 && (
           <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
             <div>
-              <p className="text-sm text-muted">Package runs out</p>
+              <p className="text-sm text-muted">{t("Package runs out")}</p>
               <p className="font-medium">
-                {p.sessions_left <= 0 ? "Used up" : props.ends ? `${props.ends.approximate ? "Around " : ""}${formatDay(props.ends.date)}` : `${p.sessions_left} left`}
+                {p.sessions_left <= 0
+                  ? t("Used up")
+                  : props.ends
+                    ? props.ends.approximate
+                      ? t("Around {day}", { day: formatDay(props.ends.date) })
+                      : formatDay(props.ends.date)
+                    : t("{n} left", { n: p.sessions_left })}
               </p>
             </div>
             {p.sessions_left <= 2 && (
               <Link href={`${base}/package`} className="btn btn-primary shrink-0">
-                <Icon name="package" /> Renew package
+                <Icon name="package" /> {t("Renew package")}
               </Link>
             )}
           </div>
@@ -297,16 +322,16 @@ export function Overview(props: {
                 <Icon name="calendar" className="size-5 shrink-0 text-brand" />
                 <span className="flex-1">
                   <span className="block font-medium">
-                    {a.scheduled_date === today ? "Today" : formatDay(a.scheduled_date)} · {typeName(a.visit_type_id ?? p.default_visit_type_id)}
+                    {a.scheduled_date === today ? t("Today") : formatDay(a.scheduled_date)} · {typeName(a.visit_type_id ?? p.default_visit_type_id)}
                   </span>
                   <span className="block text-sm text-muted">
-                    Booked on {formatDate(a.booked_on)}
+                    {t("Booked on {date}", { date: formatDate(a.booked_on) })}
                     {a.note ? ` · ${a.note}` : ""}
                   </span>
                 </span>
                 <form action={cancelBooking.bind(null, a.id)}>
-                  <ConfirmButton className="btn min-h-10 px-3 text-sm text-muted" confirmText="Cancel booking?">
-                    Cancel
+                  <ConfirmButton className="btn min-h-10 px-3 text-sm text-muted" confirmText={t("Cancel booking?")}>
+                    {t("Cancel")}
                   </ConfirmButton>
                 </form>
               </li>
@@ -316,22 +341,22 @@ export function Overview(props: {
       </div>
 
       {/* Money */}
-      <SectionTitle>Money</SectionTitle>
+      <SectionTitle>{t("Money")}</SectionTitle>
       <div className="card grid grid-cols-2 gap-4">
         <div>
-          <p className="text-sm text-muted">{p.amount_due < 0 ? "Paid in advance" : "Due"}</p>
+          <p className="text-sm text-muted">{p.amount_due < 0 ? t("Paid in advance") : t("Due")}</p>
           <p className={`text-xl font-semibold ${p.amount_due > 0 ? "text-bad" : "text-ok"}`}>
-            {p.amount_due === 0 ? "Nothing" : money(Math.abs(p.amount_due))}
+            {p.amount_due === 0 ? t("Nothing") : money(Math.abs(p.amount_due))}
           </p>
           {since && (
             <p className="text-sm text-muted">
-              since {formatDate(since)} ({dueDays} day{dueDays === 1 ? "" : "s"})
+              {dueDays === 1 ? t("since {date} (1 day)", { date: formatDate(since) }) : t("since {date} ({n} days)", { date: formatDate(since), n: dueDays })}
             </p>
           )}
         </div>
         <div>
-          <p className="text-sm text-muted">Last payment</p>
-          <p className="text-xl font-semibold">{lastPayment ? money(Number(lastPayment.amount)) : "None yet"}</p>
+          <p className="text-sm text-muted">{t("Last payment")}</p>
+          <p className="text-xl font-semibold">{lastPayment ? money(Number(lastPayment.amount)) : t("None yet")}</p>
           {lastPayment && (
             <p className="text-sm text-muted">
               {lastPayment.method.toUpperCase()} · {formatDate(lastPayment.paid_on)}
@@ -340,18 +365,26 @@ export function Overview(props: {
         </div>
         <div className="col-span-2 flex justify-between border-t border-border pt-3 text-sm">
           <span>
-            <span className="text-muted">This month billed </span>
+            <span className="text-muted">{t("This month billed")} </span>
             <span className="font-medium">{money(billedThisMonth)}</span>
           </span>
           <span>
-            <span className="text-muted">paid </span>
+            <span className="text-muted">{t("paid")} </span>
             <span className="font-medium">{money(paidThisMonth)}</span>
           </span>
         </div>
       </div>
 
       {/* Treatment */}
-      <SectionTitle aside={<Link href={`${base}?tab=history`} className="text-brand normal-case">History</Link>}>Treatment</SectionTitle>
+      <SectionTitle
+        aside={
+          <Link href={`${base}?tab=history`} className="text-brand normal-case">
+            {t("History")}
+          </Link>
+        }
+      >
+        {t("Treatment")}
+      </SectionTitle>
       <div className="card space-y-3">
         {props.activeCases.length > 0 && (
           <div className="flex flex-wrap gap-2 border-b border-border pb-3">
@@ -365,41 +398,41 @@ export function Overview(props: {
         )}
         <div className="grid grid-cols-3 gap-3 text-center">
           <div>
-            <p className="text-lg font-semibold">{started ? formatDay(started).replace(/^\w+, /, "") : "—"}</p>
-            <p className="text-sm text-muted">started</p>
+            <p className="text-lg font-semibold">{started ? formatDate(started).replace(/ \d{4}$/, "") : "—"}</p>
+            <p className="text-sm text-muted">{t("started")}</p>
           </div>
           <div>
-            <p className="text-lg font-semibold">{started ? `${weeksIn} wk${weeksIn === 1 ? "" : "s"}` : "—"}</p>
-            <p className="text-sm text-muted">in treatment</p>
+            <p className="text-lg font-semibold">{started ? (weeksIn === 1 ? t("1 wk") : t("{n} wks", { n: weeksIn })) : "—"}</p>
+            <p className="text-sm text-muted">{t("in treatment")}</p>
           </div>
           <div>
             <p className="text-lg font-semibold">{p.visits}</p>
-            <p className="text-sm text-muted">visits</p>
+            <p className="text-sm text-muted">{t("visits")}</p>
           </div>
         </div>
         {(details?.injury_date || details?.referred_by || details?.goals) && (
           <dl className="space-y-2 border-t border-border pt-3 text-base">
             {details?.injury_date && (
               <div>
-                <dt className="text-sm text-muted">Injury / surgery</dt>
+                <dt className="text-sm text-muted">{t("Injury / surgery")}</dt>
                 <dd>
                   {formatDate(details.injury_date)}
                   <span className="text-muted">
                     {" "}
-                    · {Math.max(0, Math.round((Date.parse(today) - Date.parse(details.injury_date)) / (7 * 86_400_000)))} weeks ago
+                    · {t("{n} weeks ago", { n: Math.max(0, Math.round((Date.parse(today) - Date.parse(details.injury_date)) / (7 * 86_400_000))) })}
                   </span>
                 </dd>
               </div>
             )}
             {details?.referred_by && (
               <div>
-                <dt className="text-sm text-muted">Referred by</dt>
+                <dt className="text-sm text-muted">{t("Referred by")}</dt>
                 <dd>{[details.referred_by_title, details.referred_by].filter(Boolean).join(" ")}</dd>
               </div>
             )}
             {details?.goals && (
               <div>
-                <dt className="text-sm text-muted">Goals</dt>
+                <dt className="text-sm text-muted">{t("Goals")}</dt>
                 <dd className="whitespace-pre-line">{details.goals}</dd>
               </div>
             )}
@@ -411,10 +444,10 @@ export function Overview(props: {
               <li key={pl.id} className="flex gap-2">
                 <span className={`mt-1.5 size-2 shrink-0 rounded-full ${pl === props.plan ? "bg-brand" : "bg-border"}`} />
                 <span>
-                  <span className="font-medium">{describePlan(pl)}</span>
+                  <span className="font-medium">{describePlan(pl, t)}</span>
                   <span className="text-muted">
                     {" "}
-                    · {formatDate(pl.valid_from)} – {pl.valid_until ? formatDate(pl.valid_until) : "now"}
+                    · {formatDate(pl.valid_from)} – {pl.valid_until ? formatDate(pl.valid_until) : t("now")}
                     {pl.note ? ` · ${pl.note}` : ""}
                   </span>
                 </span>
@@ -427,7 +460,7 @@ export function Overview(props: {
       {/* Recent activity */}
       {activity.length > 0 && (
         <>
-          <SectionTitle>Recent activity</SectionTitle>
+          <SectionTitle>{t("Recent activity")}</SectionTitle>
           <ul className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
             {activity.map((a, i) => (
               <li key={`${a.kind}${a.date}${i}`} className="flex items-start gap-3 px-4 py-3">
@@ -446,15 +479,25 @@ export function Overview(props: {
       )}
 
       {/* About */}
-      <SectionTitle aside={<Link href={`${base}/edit`} className="text-brand normal-case">Edit</Link>}>About</SectionTitle>
+      <SectionTitle
+        aside={
+          <Link href={`${base}/edit`} className="text-brand normal-case">
+            {t("Edit")}
+          </Link>
+        }
+      >
+        {t("About")}
+      </SectionTitle>
       <div className="card space-y-3 text-base">
-        {!hasAbout && <p className="text-muted">Add age, address for home visits and an emergency contact under Edit.</p>}
+        {!hasAbout && <p className="text-muted">{t("Add age, address for home visits and an emergency contact under Edit.")}</p>}
         {(age !== null || details?.gender) && (
           <p>
-            {age !== null && `${details?.dob_is_estimate ? "~" : ""}${age} years`}
+            {age !== null && `${details?.dob_is_estimate ? "~" : ""}${t("{n} years", { n: age })}`}
             {age !== null && details?.gender ? " · " : ""}
-            {details?.gender && { female: "Female", male: "Male", other: "Other" }[details.gender]}
-            {details?.date_of_birth && !details.dob_is_estimate && <span className="text-muted"> · born {formatDate(details.date_of_birth)}</span>}
+            {details?.gender && { female: t("Female"), male: t("Male"), other: t("Other") }[details.gender]}
+            {details?.date_of_birth && !details.dob_is_estimate && (
+              <span className="text-muted"> · {t("born {date}", { date: formatDate(details.date_of_birth) })}</span>
+            )}
           </p>
         )}
         {details && hasAddress(details) && (
@@ -465,7 +508,7 @@ export function Overview(props: {
                   {line}
                 </span>
               ))}
-              {details.latitude != null && <span className="block text-sm text-ok">📍 Pinned on the map</span>}
+              {details.latitude != null && <span className="block text-sm text-ok">📍 {t("Pinned on the map")}</span>}
             </address>
             <a
               href={mapsLink(details, props.clinicCountry)!}
@@ -473,21 +516,21 @@ export function Overview(props: {
               rel="noopener noreferrer"
               className="btn shrink-0"
             >
-              Open in Maps
+              {t("Open in Maps")}
             </a>
           </div>
         )}
         {(details?.emergency_name || details?.emergency_phone) && (
           <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
             <p>
-              <span className="block text-sm text-muted">Emergency contact</span>
+              <span className="block text-sm text-muted">{t("Emergency contact")}</span>
               {[details.emergency_title, details.emergency_name].filter(Boolean).join(" ")}
               {details.emergency_relation && <span className="text-muted"> ({details.emergency_relation})</span>}
               {details.emergency_phone && <span className="text-muted"> · {formatPhone(details.emergency_phone)}</span>}
             </p>
             {details.emergency_phone && (
               <a href={`tel:${details.emergency_phone}`} className="btn shrink-0">
-                <Icon name="phone" className="size-4" /> Call
+                <Icon name="phone" className="size-4" /> {t("Call")}
               </a>
             )}
           </div>
@@ -496,7 +539,7 @@ export function Overview(props: {
 
       {props.summaryLink && (
         <a href={props.summaryLink} target="_blank" rel="noopener noreferrer" className="btn btn-whatsapp mt-4 w-full text-base">
-          <Icon name="send" /> Send full summary on WhatsApp
+          <Icon name="send" /> {t("Send full summary on WhatsApp")}
         </a>
       )}
     </div>

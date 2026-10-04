@@ -1,6 +1,8 @@
 // Treatment-plan maths. All dates are "YYYY-MM-DD" calendar days, handled in
 // UTC so no timezone can shift them by a day.
 
+import { EN, type T } from "@/i18n";
+
 export type Plan = {
   id: string;
   patient_id: string;
@@ -126,15 +128,15 @@ export function projectedEnd(
   return { date: addDays(end, morePeriods * plan.every_n_weeks * 7), approximate: true };
 }
 
-export function describePlan(plan: Plan): string {
-  const every = plan.every_n_weeks === 1 ? "every week" : `every ${plan.every_n_weeks} weeks`;
+/** "Mon, Wed, Fri · every week" / "2× a week, any days" — in the language of `t`. */
+export function describePlan(plan: Plan, t: T = EN): string {
+  const n = plan.every_n_weeks;
   if (plan.mode === "fixed_days") {
-    const days = WEEKDAYS.filter((w) => plan.weekdays.includes(w.n)).map((w) => w.short);
-    return `${days.join(", ")} · ${every}`;
+    const days = WEEKDAYS.filter((w) => plan.weekdays.includes(w.n)).map((w) => t.weekday(w.n));
+    return `${days.join(", ")} · ${n === 1 ? t("every week") : t("every {n} weeks", { n })}`;
   }
   const k = plan.sessions_per_period ?? 0;
-  const per = plan.every_n_weeks === 1 ? "a week" : `every ${plan.every_n_weeks} weeks`;
-  return `${k}× ${per}, any day${k === 1 ? "" : "s"}`;
+  return n === 1 ? t("{k}× a week, any days", { k }) : t("{k}× every {n} weeks, any days", { k, n });
 }
 
 /** Next expected visit after `after`: the earlier of the plan's next day and any booking. */

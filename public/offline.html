@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>No internet · Physio Sessions</title>
+    <style>
+      :root { --bg: #f6f7f5; --fg: #17201c; --muted: #5b6660; --brand: #0f766e; }
+      @media (prefers-color-scheme: dark) { :root { --bg: #0f1412; --fg: #e7ece9; --muted: #9aa69f; --brand: #2dd4bf; } }
+      body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--bg); color: var(--fg); font-family: system-ui, sans-serif; text-align: center; padding: 1.25rem; box-sizing: border-box; }
+      h1 { font-size: 1.4rem; margin: 0.5rem 0; }
+      p { color: var(--muted); max-width: 22rem; margin: 0 auto 1.25rem; line-height: 1.5; }
+      button { font: inherit; font-weight: 600; padding: 0.85rem 1.75rem; border: 0; border-radius: 0.8rem; background: var(--brand); color: #fff; }
+      @media (prefers-color-scheme: dark) { button { color: #0f1412; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div style="font-size: 2.5rem" aria-hidden="true">📶</div>
+      <h1>No internet</h1>
+      <p>Physio Sessions needs a signal to open. Your records are safe — this page reloads by itself when you're back online.</p>
+      <button type="button" onclick="location.reload()">Try again</button>
+    </main>
+    <script>
+      addEventListener("online", () => location.reload());
+    </script>
+  </body>
+</html>

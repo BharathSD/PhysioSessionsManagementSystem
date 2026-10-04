@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
+import { useT } from "@/i18n/client";
 import { Icon } from "./icons";
 
 /** "✓ Payment recorded" banner, driven by ?done=… after a save. Clears itself. */
@@ -10,6 +11,7 @@ export function Flash() {
   const router = useRouter();
   const pathname = usePathname();
   const message = params.get("done");
+  const t = useT();
 
   useEffect(() => {
     if (!message) return;
@@ -29,7 +31,7 @@ export function Flash() {
       className="fixed inset-x-4 top-[calc(4.5rem+env(safe-area-inset-top))] z-30 mx-auto flex max-w-md items-center gap-2 rounded-2xl bg-ok px-4 py-3 font-medium text-bg shadow-lg"
     >
       <Icon name="check" />
-      {message}
+      {t(message)}
     </div>
   );
 }

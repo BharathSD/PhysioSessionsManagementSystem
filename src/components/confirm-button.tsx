@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useFormStatus } from "react-dom";
+import { useT } from "@/i18n/client";
 
 /**
  * Submit button for anything that removes or ends something. The first tap
@@ -9,7 +10,7 @@ import { useFormStatus } from "react-dom";
  */
 export function ConfirmButton({
   children,
-  confirmText = "Tap again to confirm",
+  confirmText,
   className = "btn",
 }: {
   children: React.ReactNode;
@@ -17,6 +18,7 @@ export function ConfirmButton({
   className?: string;
 }) {
   const [armed, setArmed] = useState(false);
+  const t = useT();
   const { pending } = useFormStatus();
 
   useEffect(() => {
@@ -37,7 +39,7 @@ export function ConfirmButton({
       }}
       className={`${className} ${armed ? "!border-bad !bg-bad !text-white" : ""}`}
     >
-      {pending ? "…" : armed ? confirmText : children}
+      {pending ? "…" : armed ? (confirmText ?? t("Tap again to confirm")) : children}
     </button>
   );
 }

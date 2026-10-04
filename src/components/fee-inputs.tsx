@@ -1,4 +1,6 @@
-import { formatMoney } from "@/lib/format";
+"use client";
+
+import { useT } from "@/i18n/client";
 import type { VisitType } from "@/lib/types";
 
 /**
@@ -18,24 +20,25 @@ export function FeeInputs({
   defaults: Record<string, number | null>;
   currency: string;
 }) {
+  const t = useT();
   return (
     <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border">
-      {types.map((t) => (
-        <label key={t.id} className="flex items-center gap-3 bg-surface px-4 py-3">
+      {types.map((type) => (
+        <label key={type.id} className="flex items-center gap-3 bg-surface px-4 py-3">
           <span className="min-w-0 flex-1">
-            <span className="block text-base font-medium">{t.name}</span>
+            <span className="block text-base font-medium">{type.name}</span>
             <span className="block text-sm text-muted">
-              {defaults[t.id] == null ? "No default set" : `Default ${formatMoney(defaults[t.id]!, currency)}`}
+              {defaults[type.id] == null ? t("No default set") : t("Default {amount}", { amount: t.money(defaults[type.id]!, currency) })}
             </span>
           </span>
           <span className="relative w-32 shrink-0">
             <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted">₹</span>
             <input
-              name={`fee_${t.id}`}
+              name={`fee_${type.id}`}
               inputMode="decimal"
-              defaultValue={current[t.id] ?? ""}
-              placeholder={defaults[t.id] == null ? "—" : String(defaults[t.id])}
-              aria-label={`${t.name} fee`}
+              defaultValue={current[type.id] ?? ""}
+              placeholder={defaults[type.id] == null ? "—" : String(defaults[type.id])}
+              aria-label={t("{type} fee", { type: type.name })}
               className="w-full rounded-xl border border-border bg-surface py-2.5 pr-3 pl-7 text-right text-lg font-semibold outline-none focus:border-brand focus:ring-2 focus:ring-brand/25"
             />
           </span>

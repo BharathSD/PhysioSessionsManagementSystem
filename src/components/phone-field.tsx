@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useT } from "@/i18n/client";
 import { countryOptions, splitE164 } from "@/lib/phone";
 
 /**
@@ -18,9 +19,10 @@ export function PhoneField({
   defaultPhone?: string | null;
   name?: string;
 }) {
+  const t = useT();
   const initial = splitE164(defaultPhone, clinicCountry);
   const [country, setCountry] = useState(initial.country);
-  const options = useMemo(() => countryOptions(clinicCountry), [clinicCountry]);
+  const options = useMemo(() => countryOptions(clinicCountry, t.locale), [clinicCountry, t.locale]);
   const selected = options.find((o) => o.code === country) ?? options[0];
 
   return (
@@ -40,7 +42,7 @@ export function PhoneField({
             name={`${name}_country`}
             value={country}
             onChange={(e) => setCountry(e.target.value)}
-            aria-label="Country code"
+            aria-label={t("Country code")}
             className="absolute inset-0 cursor-pointer opacity-0"
           >
             {options.map((o) => (
@@ -57,7 +59,7 @@ export function PhoneField({
           inputMode="tel"
           autoComplete="off"
           defaultValue={initial.national}
-          placeholder={country === "IN" ? "98765 43210" : "Phone number"}
+          placeholder={country === "IN" ? "98765 43210" : t("Phone number")}
           className="min-w-0 flex-1"
         />
       </div>

@@ -6,19 +6,25 @@ import { getBoard } from "@/lib/board";
 import { offOn } from "@/lib/days-off";
 import { getContext } from "@/lib/context";
 import { greetingName, patientName } from "@/lib/names";
-import { formatDate, formatDay, formatMoney, todayIn } from "@/lib/format";
+import { todayIn } from "@/lib/format";
+import { getT } from "@/i18n/server";
+import type { T } from "@/i18n";
 import { addDays, isActiveOn, isScheduledDay, type Plan } from "@/lib/schedule";
 
-export const metadata = { title: "Home" };
+export async function generateMetadata() {
+  const t = await getT();
+  return { title: t("Home") };
+}
 
-function greeting(timeZone: string) {
+function greeting(t: T, timeZone: string) {
   const hour = Number(new Intl.DateTimeFormat("en-GB", { hour: "numeric", hourCycle: "h23", timeZone }).format(new Date()));
-  return hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  return hour < 12 ? t("Good morning") : hour < 17 ? t("Good afternoon") : t("Good evening");
 }
 
 export default async function HomePage() {
   const ctx = await getContext();
   const { supabase, clinic, member } = ctx;
+  const t = await getT();
   const today = todayIn(clinic.timezone);
   const yesterday = addDays(today, -1);
   const monthStart = `${today.slice(0, 7)}-01`;
@@ -44,7 +50,7 @@ export default async function HomePage() {
     .sort((a, b) => a.from_date.localeCompare(b.from_date))[0];
   const unmarked = yesterdayBoard.expected.filter((r) => !r.session && r.expected?.kind !== "flexible");
   const collected = (monthPayments ?? []).reduce((sum, p) => sum + Number(p.amount), 0);
-  const money = (n: number) => formatMoney(n, clinic.currency);
+  const money = (n: number) => t.money(n, clinic.currency);
 
   // Next 7 days: how many patients are expected each day (fixed days + bookings).
   const active = new Set(patients.map((p) => p.id));
@@ -65,9 +71,9 @@ export default async function HomePage() {
   return (
     <div>
       <div className="mb-5">
-        <p className="text-base text-muted">{formatDate(today)}</p>
+        <p className="text-base text-muted">{t.date(today)}</p>
         <h1 className="text-[1.65rem] leading-tight font-semibold">
-          {greeting(clinic.timezone)}, {greetingName(member)}
+          {greeting(t, clinic.timezone)}, {greetingName(member)}
         </h1>
       </div>
 
@@ -75,20 +81,18 @@ export default async function HomePage() {
       <Link href="/today" className="card block bg-brand text-brand-fg active:scale-[0.99]" style={{ borderColor: "transparent" }}>
         <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="text-sm font-medium opacity-80">Today</p>
+            <p className="text-sm font-medium opacity-80">{t("Today")}</p>
             {expectedCount > 0 ? (
-              <p className="text-2xl font-semibold">
-                {expectedDone} of {expectedCount} marked
-              </p>
+              <p className="text-2xl font-semibold">{t("{done} of {total} marked", { done: expectedDone, total: expectedCount })}</p>
             ) : (
-              <p className="text-2xl font-semibold">No one scheduled</p>
+              <p className="text-2xl font-semibold">{t("No one scheduled")}</p>
             )}
             <p className="text-sm opacity-80">
-              {board.seen} patient{board.seen === 1 ? "" : "s"} seen so far
+              {board.seen === 1 ? t("1 patient seen so far") : t("{n} patients seen so far", { n: board.seen })}
             </p>
           </div>
           <span className="flex items-center gap-1 rounded-full bg-brand-fg/15 px-3 py-2 text-sm font-medium">
-            Open
+            {t("Open")}
             <Icon name="chevron" className="size-4" />
           </span>
         </div>
@@ -100,13 +104,13 @@ export default async function HomePage() {
       </Link>
 
       {/* Needs attention */}
-      <SectionTitle>Needs attention</SectionTitle>
+      <SectionTitle>{t("Needs attention")}</SectionTitle>
       {owing.length + ending.length + unmarked.length + Number(noFees) + Number(Boolean(closure)) === 0 ? (
         <div className="card flex items-center gap-3">
           <span className="flex size-10 items-center justify-center rounded-xl bg-ok-soft text-ok">
             <Icon name="check" />
           </span>
-          <p className="font-medium">All caught up — nothing pending.</p>
+          <p className="font-medium">{t("All caught up — nothing pending.")}</p>
         </div>
       ) : (
         <div className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
@@ -115,10 +119,10 @@ export default async function HomePage() {
               href={`/profile/days-off/${closure.id}/notify`}
               icon="calendar"
               tone="warn"
-              title={`Clinic closed ${
-                closure.from_date === closure.to_date ? formatDay(closure.from_date) : `${formatDay(closure.from_date)} – ${formatDay(closure.to_date)}`
-              }`}
-              detail={`${closure.reason ? `${closure.reason} · ` : ""}tap to tell patients on WhatsApp`}
+              title={t("Clinic closed {when}", {
+                when: closure.from_date === closure.to_date ? t.day(closure.from_date) : `${t.day(closure.from_date)} – ${t.day(closure.to_date)}`,
+              })}
+              detail={`${closure.reason ? `${closure.reason} · ` : ""}${t("tap to tell patients on WhatsApp")}`}
             />
           )}
           {noFees && (
@@ -126,8 +130,8 @@ export default async function HomePage() {
               href="/profile/fees"
               icon="rupee"
               tone="warn"
-              title="Set your fees"
-              detail="In-clinic, home visit and online fees — used when you mark attendance"
+              title={t("Set your fees")}
+              detail={t("In-clinic, home visit and online fees — used when you mark attendance")}
             />
           )}
           {unmarked.slice(0, 5).map((r) => (
@@ -136,8 +140,8 @@ export default async function HomePage() {
               href={`/patients/${r.p.id}/past-sessions`}
               icon="alert"
               tone="warn"
-              title={`${patientName(r.p)} — not marked yesterday`}
-              detail="Tap to mark present or absent"
+              title={t("{name} — not marked yesterday", { name: patientName(r.p) })}
+              detail={t("Tap to mark present or absent")}
             />
           ))}
           {owing.length > 0 && (
@@ -145,7 +149,11 @@ export default async function HomePage() {
               href="/patients?filter=due"
               icon="rupee"
               tone="bad"
-              title={`${money(totalDue)} due from ${owing.length} patient${owing.length === 1 ? "" : "s"}`}
+              title={
+                owing.length === 1
+                  ? t("{amount} due from 1 patient", { amount: money(totalDue) })
+                  : t("{amount} due from {n} patients", { amount: money(totalDue), n: owing.length })
+              }
               detail={owing
                 .slice(0, 3)
                 .map((p) => patientName(p))
@@ -157,18 +165,20 @@ export default async function HomePage() {
               href="/patients?filter=ending"
               icon="package"
               tone="warn"
-              title={`${ending.length} package${ending.length === 1 ? "" : "s"} running out`}
-              detail={`${ending
-                .slice(0, 3)
-                .map((p) => patientName(p))
-                .join(", ")} — offer a renewal`}
+              title={ending.length === 1 ? t("1 package running out") : t("{n} packages running out", { n: ending.length })}
+              detail={t("{names} — offer a renewal", {
+                names: ending
+                  .slice(0, 3)
+                  .map((p) => patientName(p))
+                  .join(", "),
+              })}
             />
           )}
         </div>
       )}
 
       {/* Coming week */}
-      <SectionTitle aside="Scheduled + booked">Next 7 days</SectionTitle>
+      <SectionTitle aside={t("Scheduled + booked")}>{t("Next 7 days")}</SectionTitle>
       <div className="card">
         <div className="grid grid-cols-7 items-end gap-1.5 text-center">
           {week.map(({ day, count }) => (
@@ -178,7 +188,7 @@ export default async function HomePage() {
                 <div className="w-full rounded-md bg-chart" style={{ height: `${count ? Math.max(12, (count / busiest) * 100) : 4}%`, opacity: count ? 1 : 0.25 }} />
               </div>
               <span className="text-xs text-muted">
-                {new Intl.DateTimeFormat("en-IN", { weekday: "short", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`))}
+                {new Intl.DateTimeFormat(t.intl, { weekday: "short", timeZone: "UTC" }).format(new Date(`${day}T00:00:00Z`))}
               </span>
               <span className="text-[11px] text-muted">{+day.slice(8)}</span>
             </div>
@@ -188,20 +198,20 @@ export default async function HomePage() {
 
       {/* This month */}
       <SectionTitle>
-        This month · {new Intl.DateTimeFormat("en-IN", { month: "long", timeZone: "UTC" }).format(new Date(`${today}T00:00:00Z`))}
+        {t("This month")} · {new Intl.DateTimeFormat(t.intl, { month: "long", timeZone: "UTC" }).format(new Date(`${today}T00:00:00Z`))}
       </SectionTitle>
       <div className="grid grid-cols-2 gap-3">
         <div className="card">
-          <p className="text-sm text-muted">Sessions done</p>
+          <p className="text-sm text-muted">{t("Sessions done")}</p>
           <p className="text-3xl font-semibold">{monthSessions ?? 0}</p>
         </div>
         <div className="card">
-          <p className="text-sm text-muted">Money collected</p>
+          <p className="text-sm text-muted">{t("Money collected")}</p>
           <p className="text-3xl font-semibold">{money(collected)}</p>
         </div>
       </div>
       <p className="mt-2 px-1 text-sm text-muted">
-        {patients.length} active patient{patients.length === 1 ? "" : "s"}
+        {patients.length === 1 ? t("1 active patient") : t("{n} active patients", { n: patients.length })}
       </p>
     </div>
   );
