@@ -1263,4 +1263,13 @@ export const hi: Record<string, string> = {
   "On these days nobody is expected and no attendance is asked for. Packages last longer instead.": "इन दिनों किसी के आने की उम्मीद नहीं और हाज़िरी नहीं पूछी जाती। पैकेज उतना ज़्यादा चलता है।",
   "Open every day": "हर दिन खुला",
   "Other days off": "दूसरी छुट्टियां",
+  "These days off no longer exist.": "ये छुट्टियां अब मौजूद नहीं हैं।",
+  "The first day can't be in the past.": "पहला दिन बीती तारीख़ का नहीं हो सकता।",
+  "Dates changed — let patients know": "तारीख़ें बदलीं — मरीज़ों को बताएं",
+  "Days off updated": "छुट्टियां अपडेट हुईं",
+  "Days off removed": "छुट्टियां हटाई गईं",
+  "Edit days off": "छुट्टियां बदलें",
+  "If you change the dates, you'll be taken to send patients the new dates.": "तारीख़ें बदलेंगे तो आपको मरीज़ों को नई तारीख़ें भेजने के पेज पर ले जाया जाएगा।",
+  "Tap again to remove these days off": "ये छुट्टियां हटाने के लिए फिर दबाएं",
+  "Remove these days off": "ये छुट्टियां हटाएं",
 };

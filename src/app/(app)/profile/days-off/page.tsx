@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { ActionForm } from "@/components/action-form";
 import { OwnerNote } from "@/components/owner-note";
-import { ConfirmButton } from "@/components/confirm-button";
 import { DateField } from "@/components/date-field";
 import { Icon } from "@/components/icons";
 import { PageHeader, SectionTitle } from "@/components/ui";
@@ -12,7 +11,7 @@ import { msg } from "@/i18n";
 import { getT, titled } from "@/i18n/server";
 import { WEEKDAYS } from "@/lib/schedule";
 import { CHIP } from "@/components/chip";
-import { addClinicDaysOff, removeDayOff, setClosedWeekdays } from "../../actions";
+import { addClinicDaysOff, setClosedWeekdays } from "../../actions";
 
 export const generateMetadata = titled(msg("Days off"));
 
@@ -112,11 +111,9 @@ export default async function DaysOffPage() {
                 <Icon name="message" className="size-4" /> {t("Notify")}
               </Link>
               {isOwner && (
-                <form action={removeDayOff.bind(null, c.id)}>
-                  <ConfirmButton className="btn min-h-10 px-3 text-sm text-muted" confirmText={t("Remove?")}>
-                    {t("Remove")}
-                  </ConfirmButton>
-                </form>
+                <Link href={`/profile/days-off/${c.id}/edit`} className="btn min-h-10 shrink-0 px-3 text-sm">
+                  <Icon name="edit" className="size-4" /> {t("Edit")}
+                </Link>
               )}
             </li>
           ))}

@@ -1080,6 +1080,39 @@ export async function addClinicDaysOff(_prev: FormState, form: FormData): Promis
   redirect(`/profile/days-off/${data.id}/notify`);
 }
 
+/**
+ * Change a clinic closure's dates or reason. New dates clear the "told" ticks
+ * and go to the notify screen, so patients get the new dates.
+ */
+export async function updateClinicDayOff(dayOffId: string, _prev: FormState, form: FormData): Promise<FormState> {
+  const { supabase, clinic, member } = await getContext();
+  if (member.role !== "owner") return { error: OWNER_ONLY };
+  const { data: before } = await supabase.from("days_off").select("from_date, to_date").eq("id", dayOffId).is("patient_id", null).maybeSingle();
+  if (!before) return { error: msg("These days off no longer exist.") };
+
+  const today = todayIn(clinic.timezone);
+  const from = isoDate(form, "from_date");
+  const to = isoDate(form, "to_date") ?? from;
+  if (!from || !to) return { error: msg("Pick the first and last day.") };
+  if (to < from) return { error: msg("The last day can't be before the first day.") };
+  if (to < today) return { error: msg("Those days have already passed.") };
+  // A closure that has already started keeps its start; a new start can't be in the past.
+  if (from !== before.from_date && from < today) return { error: msg("The first day can't be in the past.") };
+
+  const { error } = await supabase
+    .from("days_off")
+    .update({ from_date: from, to_date: to, reason: text(form, "reason") || null })
+    .eq("id", dayOffId);
+  if (error) return { error: dbError(error) };
+
+  refresh();
+  if (from !== before.from_date || to !== before.to_date) {
+    await supabase.from("day_off_notices").delete().eq("day_off_id", dayOffId);
+    redirect(`/profile/days-off/${dayOffId}/notify?${new URLSearchParams({ done: msg("Dates changed — let patients know") })}`);
+  }
+  redirect(`/profile/days-off?${new URLSearchParams({ done: msg("Days off updated") })}`);
+}
+
 /** The days the clinic is closed every week (e.g. Sunday). */
 export async function setClosedWeekdays(_prev: FormState, form: FormData): Promise<FormState> {
   const { supabase, clinic, member } = await getContext();
@@ -1097,6 +1130,7 @@ export async function removeDayOff(dayOffId: string) {
   const { error } = await supabase.from("days_off").delete().eq("id", dayOffId);
   if (error) throw new Error(error.message);
   refresh();
+  redirect(`/profile/days-off?${new URLSearchParams({ done: msg("Days off removed") })}`);
 }
 
 /** Tick a patient as told about a clinic closure (called when their WhatsApp opens). */

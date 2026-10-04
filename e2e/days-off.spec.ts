@@ -46,6 +46,26 @@ test.describe.serial("days off and cancelling in advance", () => {
     await expect(page.getByText("Clinic closed · Conference").first()).toBeVisible();
   });
 
+  test("a closure can be edited: a new reason keeps the ticks, new dates ask to tell patients again", async ({ page }) => {
+    await page.goto("/profile/days-off");
+    const row = page.locator("li", { hasText: "Conference" });
+    await expect(row).toContainText("1 patient told");
+    await row.getByRole("link", { name: "Edit" }).click();
+    await expect(page).toHaveURL(/\/edit$/);
+    await page.fill('input[name="reason"]', "Conference in Pune");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText("Days off updated")).toBeVisible();
+    await expect(page.locator("li", { hasText: "Conference in Pune" })).toContainText("1 patient told");
+
+    await page.locator("li", { hasText: "Conference in Pune" }).getByRole("link", { name: "Edit" }).click();
+    await expect(page).toHaveURL(/\/edit$/);
+    await fillDate(page, "Last day off", day(8));
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page).toHaveURL(/\/notify/);
+    await expect(page.getByText("Dates changed — let patients know")).toBeVisible();
+    await expect(page.locator("li", { hasText: "Rahul Sharma" }).getByText("Told")).toHaveCount(0);
+  });
+
   test("one day: cancel with a make-up session, message the patient, then restore", async ({ page }) => {
     await page.goto(`/patients/${ids.rahul}`);
     await page.getByRole("link", { name: /^Cancel / }).first().click();
