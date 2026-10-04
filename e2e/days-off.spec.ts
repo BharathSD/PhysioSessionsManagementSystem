@@ -86,7 +86,7 @@ test.describe.serial("days off and cancelling in advance", () => {
     await expect(page.getByText("Cancelled by patient · Travelling")).toBeVisible();
   });
 
-  test("Today: a day cancelled in advance moves to 'Off today'; a closed clinic still allows walk-ins", async ({ page }) => {
+  test("Today: a day cancelled in advance moves to 'Off today'; a closed clinic asks for no attendance", async ({ page }) => {
     await page.goto(`/patients/${ids.suresh}/cancel-days?dates=${today}`);
     await page.getByRole("button", { name: "Cancel sessions" }).click();
     await expect(page.getByText("1 day cancelled")).toBeVisible(); // wait for the save before leaving
@@ -100,9 +100,9 @@ test.describe.serial("days off and cancelling in advance", () => {
     await expect(page).toHaveURL(/\/notify$/);
     await page.goto("/today");
     await expect(page.getByText("Clinic closed today")).toBeVisible();
-    // The walk-ins list starts open when nobody is expected; only open it if it's closed.
-    const walkIns = page.locator("details", { has: page.locator("summary", { hasText: "Walk-ins" }) });
-    if ((await walkIns.count()) && (await walkIns.getAttribute("open")) === null) await walkIns.locator("summary").click();
+    // No Present / Absent on a closed day, unless asked for: someone may still come.
+    await expect(page.locator('button[aria-label$="present"]:visible')).toHaveCount(0);
+    await page.getByText(/Emergency or extra visit\?/).click();
     await expect(page.locator('button[aria-label$="present"]').first()).toBeVisible();
   });
 });

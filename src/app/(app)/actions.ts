@@ -1080,6 +1080,18 @@ export async function addClinicDaysOff(_prev: FormState, form: FormData): Promis
   redirect(`/profile/days-off/${data.id}/notify`);
 }
 
+/** The days the clinic is closed every week (e.g. Sunday). */
+export async function setClosedWeekdays(_prev: FormState, form: FormData): Promise<FormState> {
+  const { supabase, clinic, member } = await getContext();
+  if (member.role !== "owner") return { error: OWNER_ONLY };
+  const days = [...new Set(form.getAll("closed_weekdays").map(Number))].filter((d) => Number.isInteger(d) && d >= 1 && d <= 7).sort();
+  if (days.length === 7) return { error: msg("The clinic can't be closed every day of the week.") };
+  const { error } = await supabase.from("clinics").update({ closed_weekdays: days }).eq("id", clinic.id);
+  if (error) return { error: dbError(error) };
+  refresh();
+  return { ok: msg("Weekly closed days saved") };
+}
+
 export async function removeDayOff(dayOffId: string) {
   const { supabase } = await getContext();
   const { error } = await supabase.from("days_off").delete().eq("id", dayOffId);

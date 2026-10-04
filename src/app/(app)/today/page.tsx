@@ -83,9 +83,9 @@ export default async function TodayPage(props: PageProps<"/today">) {
           <span className="flex-1">
             <span className="block font-semibold text-warn">
               {t("Clinic closed today")}
-              {clinicClosed.reason ? ` · ${clinicClosed.reason}` : ""}
+              {clinicClosed.weekdays ? ` · ${t("Weekly off")}` : clinicClosed.reason ? ` · ${clinicClosed.reason}` : ""}
             </span>
-            <span className="block text-sm text-muted">{t("Scheduled sessions are cancelled. You can still mark anyone who comes.")}</span>
+            <span className="block text-sm text-muted">{t("Scheduled sessions are off, with no charge. Seeing someone in an emergency? Mark them below.")}</span>
           </span>
           <Link href="/profile/days-off" className="text-sm font-medium text-brand">
             {t("Change")}
@@ -121,6 +121,33 @@ export default async function TodayPage(props: PageProps<"/today">) {
             )}
           </EmptyState>
         </div>
+      ) : clinicClosed ? (
+        // Closed: no attendance asked for. Anyone seen anyway is listed, and the rest
+        // stay one tap away for the rare exception.
+        <>
+          {expected.length > 0 && (
+            <>
+              <SectionTitle>{t("Seen today")}</SectionTitle>
+              <ul className="space-y-2.5">
+                {expected.map((r) => (
+                  <PatientRow key={r.p.id} row={r} rc={rc} />
+                ))}
+              </ul>
+            </>
+          )}
+          <details className="group" open={Boolean(q)}>
+            <summary className="mt-7 mb-2.5 flex min-h-11 cursor-pointer list-none items-center justify-between rounded-xl px-1 text-sm font-semibold text-muted">
+              <span>{t("Emergency or extra visit? Mark the patient here ({n})", { n: offToday.length + others.length })}</span>
+              <span className="text-brand group-open:hidden">{t("Show")}</span>
+              <span className="hidden text-brand group-open:inline">{t("Hide")}</span>
+            </summary>
+            <ul className="space-y-2.5">
+              {[...offToday, ...others].map((r) => (
+                <PatientRow key={r.p.id} row={r} rc={rc} />
+              ))}
+            </ul>
+          </details>
+        </>
       ) : (
         <>
           <SectionTitle aside={expected.length > 0 ? t("{done} of {total} marked", { done, total: expected.length }) : undefined}>{t("Expected today")}</SectionTitle>

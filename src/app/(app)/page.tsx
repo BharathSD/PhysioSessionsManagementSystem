@@ -85,7 +85,7 @@ export default async function HomePage() {
             {expectedCount > 0 ? (
               <p className="text-2xl font-semibold">{t("{done} of {total} marked", { done: expectedDone, total: expectedCount })}</p>
             ) : (
-              <p className="text-2xl font-semibold">{t("No one scheduled")}</p>
+              <p className="text-2xl font-semibold">{board.clinicClosed ? t("Clinic closed today") : t("No one scheduled")}</p>
             )}
             <p className="text-sm opacity-80">
               {board.seen === 1 ? t("1 patient seen so far") : t("{n} patients seen so far", { n: board.seen })}

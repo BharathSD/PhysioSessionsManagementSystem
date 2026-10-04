@@ -21,7 +21,7 @@ import { formatPhone } from "@/lib/phone";
 import { describePlan, isScheduledDay, nextVisit, planOn, planVisitType, projectedEnd, WEEKDAYS, type Plan } from "@/lib/schedule";
 import { STATUS } from "@/lib/status";
 import type { Appointment, Charge, Package, Payment, Session } from "@/lib/types";
-import { describeOff, isOffFor, offOn, type DayOff } from "@/lib/days-off";
+import { describeOff, isOffFor, offOn, weeklyOff, type DayOff } from "@/lib/days-off";
 import { cancellationNotice } from "@/lib/messages";
 import { Overview, type PatientDetails } from "./overview";
 import { restorePatientDay } from "../../actions";
@@ -130,7 +130,7 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
   const plan = planOn(plans, today);
   const futurePlan = plans.find((pl) => pl.valid_from > today);
   // For receipts: the session after today. For "Next:" on screen: today, if it's still to be marked.
-  const daysOff = (offRows ?? []) as DayOff[];
+  const daysOff = [...((offRows ?? []) as DayOff[]), ...weeklyOff(clinic.closed_weekdays)];
   const isOff = isOffFor(daysOff, p.id);
   const offToday = offOn(daysOff, p.id, today);
   const next = nextVisit(plan, upcoming.map((a) => a.scheduled_date), today, isOff);
@@ -439,14 +439,20 @@ export default async function PatientPage(props: PageProps<"/patients/[id]">) {
               </form>
             </div>
           </div>
+        ) : offToday ? (
+          // A day off (clinic closed, weekly off, or this patient's own): nothing to mark.
+          <div className="flex flex-wrap items-center gap-3">
+            <Icon name="ban" className="size-5 shrink-0 text-muted" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-base font-medium">{t("No session today")}</span>
+              <span className="block text-sm text-muted">{describeOff(offToday, t)}</span>
+            </span>
+            <Link href={`${base}/attendance`} className="text-sm font-medium text-brand">
+              {t("Emergency visit? Mark it")}
+            </Link>
+          </div>
         ) : (
           <>
-            {offToday && (
-              <p className="mb-2.5 flex flex-wrap items-center gap-2 rounded-xl bg-surface-2 px-3 py-2 text-sm">
-                <Icon name="ban" className="size-4 text-muted" />
-                <span className="flex-1">{t("Off today — {why}. You can still mark them if they come.", { why: describeOff(offToday, t) })}</span>
-              </p>
-            )}
             <p className="mb-2.5 text-base font-medium">
               {t("Today's attendance")} <span className="font-normal text-muted">· {typeName(todayType)}</span>
             </p>

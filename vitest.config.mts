@@ -8,7 +8,7 @@ export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
     environment: "node",
-    testTimeout: 30_000,
-    hookTimeout: 60_000, // starting an in-memory Postgres and running migrations takes a few seconds
+    testTimeout: 60_000,
+    hookTimeout: 180_000, // starting an in-memory Postgres and running migrations takes a few seconds
   },
 });

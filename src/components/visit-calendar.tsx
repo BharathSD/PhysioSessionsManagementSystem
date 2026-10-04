@@ -183,8 +183,10 @@ export function VisitCalendar({
                 </button>
               );
             }
+            // The clinic's weekly closing day (e.g. Sunday): shown struck through.
+            const weekly = offOn(daysOff, null, d)?.weekdays;
             return (
-              <span key={d} className={`${base} text-muted${ring}`}>
+              <span key={d} className={`${base} text-muted${weekly ? " line-through opacity-50" : ""}${ring}`} title={weekly ? t("Clinic closed (weekly off)") : undefined}>
                 {dayNum}
               </span>
             );

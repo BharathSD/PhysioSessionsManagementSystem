@@ -9,6 +9,7 @@ export type Clinic = {
   country: string;
   currency: string;
   timezone: string;
+  closed_weekdays?: number[]; // ISO weekdays the clinic is closed every week (1 = Mon … 7 = Sun)
 };
 
 export type Member = {

@@ -3,7 +3,7 @@
 
 import type { getContext } from "./context";
 import { toSummary } from "./data";
-import { isOffFor, offOn, type DayOff } from "./days-off";
+import { isOffFor, offOn, weeklyOff, type DayOff } from "./days-off";
 import { getT } from "@/i18n/server";
 import { addDays, describePlan, flexibleProgress, isScheduledDay, nextVisit, planVisitType, type Plan } from "./schedule";
 import type { Appointment, PatientSummary, Session } from "./types";
@@ -23,7 +23,7 @@ export type BoardRow = {
 };
 
 /** `physioId`: only that physio's patients (the "My patients" filter in a clinic team). */
-export async function getBoard({ supabase }: Ctx, date: string, search = "", physioId?: string) {
+export async function getBoard({ supabase, clinic }: Ctx, date: string, search = "", physioId?: string) {
   let patientsQuery = supabase.from("patient_summary").select("*").eq("archived", false).order("name");
   if (search) patientsQuery = patientsQuery.ilike("name", `%${search}%`);
   if (physioId) patientsQuery = patientsQuery.eq("physio_id", physioId);
@@ -38,7 +38,7 @@ export async function getBoard({ supabase }: Ctx, date: string, search = "", phy
     // Days off from this date on (for today's list and for skipping them in "next visit").
     supabase.from("days_off").select("*").gte("to_date", date),
   ]);
-  const daysOff = (offs ?? []) as DayOff[];
+  const daysOff = [...((offs ?? []) as DayOff[]), ...weeklyOff(clinic.closed_weekdays)];
   if (error) throw new Error(error.message);
   const t = await getT();
 
@@ -90,7 +90,7 @@ export async function getBoard({ supabase }: Ctx, date: string, search = "", phy
   const offToday = board.filter(cancelledAhead);
   // Everyone else stays available as a walk-in, even on a closed day.
   const others = board.filter((r) => !r.expected).sort(byPending);
-  const clinicClosed = daysOff.find((d) => d.patient_id === null && d.from_date <= date && d.to_date >= date);
+  const clinicClosed = offOn(daysOff, null, date);
   const seen = [...marked.values()].filter((s) => s.status === "attended").length;
 
   return { expected, others, offToday, clinicClosed, seen, all: board, daysOff };

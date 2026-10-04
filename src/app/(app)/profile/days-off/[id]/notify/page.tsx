@@ -4,7 +4,7 @@ import { PageHeader } from "@/components/ui";
 import { getContext } from "@/lib/context";
 import { patientName, physioName } from "@/lib/names";
 import { toSummary } from "@/lib/data";
-import { datesBetween, isOffFor, type DayOff } from "@/lib/days-off";
+import { datesBetween, isOffFor, weeklyOff, type DayOff } from "@/lib/days-off";
 import { whatsappLink } from "@/lib/format";
 import { msg } from "@/i18n";
 import { getT, titled } from "@/i18n/server";
@@ -36,7 +36,7 @@ export default async function NotifyPage(props: PageProps<"/profile/days-off/[id
     supabase.from("days_off").select("*").gte("to_date", c.from_date),
     supabase.from("day_off_notices").select("patient_id").eq("day_off_id", id),
   ]);
-  const daysOff = (offs ?? []) as DayOff[];
+  const daysOff = [...((offs ?? []) as DayOff[]), ...weeklyOff(clinic.closed_weekdays)];
   const told = new Set((notices ?? []).map((n) => n.patient_id as string));
   const days = datesBetween(c.from_date, c.to_date);
   const sender = { clinic, physioName: physioName(member) };

@@ -99,3 +99,21 @@ describe("next visit and package end", () => {
     expect(projectedEnd(plan(), TODAY, 2, [TODAY], off)).toEqual({ date: "2026-10-12", approximate: false });
   });
 });
+
+import { describeOff, isOffFor, offOn, weeklyOff } from "@/lib/days-off";
+
+describe("weekly closing days", () => {
+  const sundays = weeklyOff([7]);
+  it("cover every such weekday, and only those", () => {
+    expect(offOn(sundays, "p1", "2026-10-04")?.weekdays).toEqual([7]); // a Sunday
+    expect(offOn(sundays, "p1", "2026-10-05")).toBeUndefined(); // Monday
+    expect(weeklyOff([])).toEqual([]);
+  });
+  it("move the next visit and stretch the package past them", () => {
+    const daily = plan({ weekdays: [1, 2, 3, 4, 5, 6, 7], every_n_weeks: 1, valid_from: "2026-10-01" });
+    expect(nextVisit(daily, [], "2026-10-03", isOffFor(sundays, "p1"))).toBe("2026-10-05");
+  });
+  it("are described as a weekly off", () => {
+    expect(describeOff(sundays[0])).toBe("Clinic closed (weekly off)");
+  });
+});

@@ -10,7 +10,9 @@ import type { DayOff } from "@/lib/days-off";
 import { todayIn } from "@/lib/format";
 import { msg } from "@/i18n";
 import { getT, titled } from "@/i18n/server";
-import { addClinicDaysOff, removeDayOff } from "../../actions";
+import { WEEKDAYS } from "@/lib/schedule";
+import { CHIP } from "@/components/chip";
+import { addClinicDaysOff, removeDayOff, setClosedWeekdays } from "../../actions";
 
 export const generateMetadata = titled(msg("Days off"));
 
@@ -39,15 +41,49 @@ export default async function DaysOffPage() {
       />
 
       {!isOwner && <OwnerNote text={t("Only the clinic owner can change the clinic's days off. You can still notify patients.")} />}
+
+      {/* Regular weekly closing, e.g. every Sunday: nobody is expected and no attendance is asked for. */}
+      <SectionTitle>{t("Closed every week")}</SectionTitle>
+      {isOwner ? (
+        <ActionForm action={setClosedWeekdays} submitLabel={t("Save")} className="card space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {WEEKDAYS.map((w) => (
+              <label key={w.n} className={CHIP}>
+                <input
+                  type="checkbox"
+                  name="closed_weekdays"
+                  value={w.n}
+                  defaultChecked={clinic.closed_weekdays?.includes(w.n)}
+                  className="sr-only"
+                />
+                {t.weekday(w.n)}
+              </label>
+            ))}
+          </div>
+          <p className="text-sm text-muted">{t("On these days nobody is expected and no attendance is asked for. Packages last longer instead.")}</p>
+        </ActionForm>
+      ) : (
+        <p className="card text-base">
+          {clinic.closed_weekdays?.length ? clinic.closed_weekdays.map((d) => t.weekday(d)).join(", ") : t("Open every day")}
+        </p>
+      )}
+
+      <SectionTitle>{t("Other days off")}</SectionTitle>
       {isOwner && (
         <ActionForm action={addClinicDaysOff} submitLabel={t("Save and notify patients")} className="card space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <DateField name="from_date" label={t("First day off")} today={today} min={today} shortcuts={["today", "tomorrow"]} required />
-            <DateField name="to_date" label={
+            <DateField
+              name="to_date"
+              label={
                 <span>
                   {t("Last day off")} <em>{t("(same day if just one)")}</em>
                 </span>
-              } today={today} min={today} shortcuts={[]} />
+              }
+              today={today}
+              min={today}
+              shortcuts={[]}
+            />
           </div>
           <label className="field">
             <span>
